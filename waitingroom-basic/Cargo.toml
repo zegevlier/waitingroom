@@ -1,0 +1,11 @@
+[package]
+name = "waitingroom-basic"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+waitingroom-core = { workspace = true }
+waitingroom-local-queue = { workspace = true }
+foundations = { workspace = true }

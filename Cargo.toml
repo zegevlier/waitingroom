@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["waitingroom-*"]
+
+[workspace.dependencies]
+waitingroom-core = { path = "./waitingroom-core" }
+waitingroom-local-queue = { path = "./waitingroom-local-queue" }
+waitingroom-basic = { path = "./waitingroom-basic" }
+waitingroom-http = { path = "./waitingroom-http" }
+rand = "0.8.5"
+itertools = "0.12.0"
+foundations = "3.0.1"
+serde = "1.0.195"
