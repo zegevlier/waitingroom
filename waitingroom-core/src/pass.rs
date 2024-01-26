@@ -30,13 +30,18 @@ impl Pass {
         }
     }
 
-    pub fn refresh(&mut self, node_id: NodeId, pass_expiry_time: Time) {
+    pub fn refresh(&self, node_id: NodeId, pass_expiry_time: Time) -> Self {
         let now_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis();
 
-        self.node_id = node_id;
-        self.expiry_time = now_time + pass_expiry_time;
+        Self {
+            node_id,
+            expiry_time: now_time + pass_expiry_time,
+            identifier: self.identifier,
+            queue_join_time: self.queue_join_time,
+            pass_creation_time: self.pass_creation_time,
+        }
     }
 }

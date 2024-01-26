@@ -5,6 +5,7 @@ pub enum WaitingRoomError {
     TicketAtWrongNode,
     TicketCannotLeaveYet,
     PassExpired,
+    PassNotInList,
 }
 
 impl std::fmt::Display for WaitingRoomError {
@@ -15,6 +16,7 @@ impl std::fmt::Display for WaitingRoomError {
             WaitingRoomError::TicketAtWrongNode => write!(f, "Ticket at wrong node"),
             WaitingRoomError::TicketCannotLeaveYet => write!(f, "Ticket cannot leave yet"),
             WaitingRoomError::PassExpired => write!(f, "Pass expired"),
+            WaitingRoomError::PassNotInList => write!(f, "Pass not in list"),
         }
     }
 }
