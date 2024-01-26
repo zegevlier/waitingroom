@@ -111,8 +111,8 @@ async fn handler(
 
     let (ticket, text) = match ticket {
         Some(ticket) => {
-            let checkin_reponse = match state.waiting_room.lock().unwrap().check_in(ticket) {
-                Ok(checkin_reponse) => checkin_reponse,
+            let checkin_response = match state.waiting_room.lock().unwrap().check_in(ticket) {
+                Ok(checkin_response) => checkin_response,
                 Err(err) => {
                     return Ok((
                         jar,
@@ -120,12 +120,12 @@ async fn handler(
                     ))
                 }
             };
-            if checkin_reponse.position_estimate == 0 {
+            if checkin_response.position_estimate == 0 {
                 let pass = state
                     .waiting_room
                     .lock()
                     .unwrap()
-                    .leave(checkin_reponse.new_ticket)
+                    .leave(checkin_response.new_ticket)
                     .unwrap();
                 let cookie = Cookie::build(("pass", serde_json::to_string(&pass).unwrap()));
                 let mut response = Response::new(Body::from(
@@ -137,10 +137,10 @@ async fn handler(
                 return Ok((jar.add(cookie), response));
             } else {
                 (
-                    checkin_reponse.new_ticket,
+                    checkin_response.new_ticket,
                     format!(
-                        "You are at queue poisiton {}",
-                        checkin_reponse.position_estimate
+                        "You are at queue position {}",
+                        checkin_response.position_estimate
                     ),
                 )
             }
@@ -239,9 +239,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Initialize telemetry with the settings obtained from the config. Don't drive the telemetry
     // server yet - we have some extra security-related steps to do.
-    let tele_serv_fut = init_with_server(&service_info, &cli.settings.telemetry, vec![])?;
-    if let Some(tele_serv_addr) = tele_serv_fut.server_addr() {
-        log::info!("Telemetry server is listening on http://{}", tele_serv_addr);
+    let telemetry_server_fut = init_with_server(&service_info, &cli.settings.telemetry, vec![])?;
+    if let Some(telemetry_server_addr) = telemetry_server_fut.server_addr() {
+        log::info!(
+            "Telemetry server is listening on http://{}",
+            telemetry_server_addr
+        );
     }
 
     let waiting_room = Arc::new(Mutex::new(BasicWaitingRoom::new(cli.settings.waiting_room)));
@@ -264,8 +267,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .await
         .unwrap();
 
-    let webserver = axum::serve(listener, app).into_future();
+    let web_server = axum::serve(listener, app).into_future();
 
-    tokio::join!(webserver, timers, tele_serv_fut).0.unwrap();
+    tokio::join!(web_server, timers, telemetry_server_fut)
+        .0
+        .unwrap();
     Ok(())
 }

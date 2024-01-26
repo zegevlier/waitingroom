@@ -11,12 +11,12 @@ This contains some things that will happen soon, and some things which might not
 - [ ] Write documentation for `WaitingroomError`
 - [ ] Make fake user managing tool (TUI based, probably)
 - [ ] Ensure consistent usage of `waitingroom` vs `waiting_room`
-- [ ] Run spell-checker on everything
+- [x] Run spell-checker on everything
 - [ ] Document metrics and move them to `waitingroom-metrics`
 - [ ] Set up docker container images to make running prometheus and grafana for the dashboard easier
-- [ ] Add message queue to waiting room and fix functions being called non-attomically
+- [ ] Add message queue to waiting room and fix functions being called non-atomically
 - [ ] Re-make parts of `waitingroom-http` to make the code more self-documenting and overall better
-- [ ] Add cross-node message passing to `waitingroom-http` to prepair for real implementation
+- [ ] Add cross-node message passing to `waitingroom-http` to prepare for real implementation
 - [ ] Write QPID-based waiting room (The part that's actually the thesis lol)
 - [ ] Write benchmarking skeleton and run benchmarks
 - [ ] Write testing skeleton, write tests and run time

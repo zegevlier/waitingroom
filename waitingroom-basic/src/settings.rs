@@ -12,21 +12,21 @@ pub struct BasicWaitingRoomSettings {
     /// users are not let in a number of times.
     pub max_user_count: usize,
 
-    /// The time in miliseconds between ticket refreshes carried out by the client.
+    /// The time in milliseconds between ticket refreshes carried out by the client.
     pub ticket_refresh_time: u128,
-    /// The time in miliseconds until a ticket expires if it is not refreshed.
+    /// The time in milliseconds until a ticket expires if it is not refreshed.
     /// This should be greater than the ticket refresh time.
     pub ticket_expiry_time: u128,
-    /// The time in miliseconds until a pass expires if it is not used.
+    /// The time in milliseconds until a pass expires if it is not used.
     /// Passes are refreshed automatically when they are used.
     pub pass_expiry_time: u128,
 
-    /// The time in miliseconds between user count syncs across nodes.
+    /// The time in milliseconds between user count syncs across nodes.
     /// For the basic waiting room, this is a no-op.
     pub sync_user_counts_interval: u128,
-    /// The time in miliseconds between cleanup operations.
+    /// The time in milliseconds between cleanup operations.
     pub cleanup_interval: u128,
-    /// The time in miliseconds between ensuring that correct number
+    /// The time in milliseconds between ensuring that correct number
     /// of users are on the site.
     pub ensure_correct_user_count_interval: u128,
 }

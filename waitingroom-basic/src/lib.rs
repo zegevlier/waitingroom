@@ -96,7 +96,7 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
             position_estimate
         };
 
-        // call frefresh on the ticket
+        // call refresh on the ticket
         let ticket = self
             .local_queue
             .entry(ticket.identifier)
@@ -172,7 +172,7 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
                     self.remove_from_queue(ticket.identifier);
                 } else {
                     // Since we don't know whether the value is in the queue, and we cannot assume it is actually removed,
-                    // we count the number of items removed from the list (either 0 or 1) and decriment the metric by that.
+                    // we count the number of items removed from the list (either 0 or 1) and decrement the metric by that.
                     let removed_count =
                         remove_and_return_count(&mut self.queue_leaving_list, |t| t != &ticket);
                     metrics::waitingroom_basic::to_be_let_in_count(SELF_NODE_ID)
@@ -239,7 +239,7 @@ impl WaitingRoomTimerTriggered for BasicWaitingRoom {
             remove_and_return_count(&mut self.on_site_list, |pass| pass.expiry_time > now_time);
         metrics::waitingroom_basic::on_site_count(SELF_NODE_ID).dec_by(removed_count);
 
-        // TOOD: Replace this with something in an operation queue.
+        // TODO: Replace this with something in an operation queue.
         // This method should not be called inside another method.
         self.let_users_out_of_queue(removed_count as usize)?;
 
@@ -275,7 +275,7 @@ impl WaitingRoomTimerTriggered for BasicWaitingRoom {
     }
 }
 
-// Since the basic waiting room only has a single node, these are all unreachables, since they should never be called.
+// Since the basic waiting room only has a single node, these are all unreachable, since they should never be called.
 impl WaitingRoomMessageTriggered for BasicWaitingRoom {}
 
 impl BasicWaitingRoom {
@@ -331,7 +331,7 @@ impl BasicWaitingRoom {
         }
     }
 
-    /// Remove the element at the front of the local queue, decrimenting the metric if the ticket type is normal.
+    /// Remove the element at the front of the local queue, decrementing the metric if the ticket type is normal.
     pub fn dequeue(&mut self) -> Option<Ticket> {
         let element = self.local_queue.dequeue();
         if element.is_some() && element.as_ref().unwrap().ticket_type == TicketType::Normal {
@@ -340,7 +340,7 @@ impl BasicWaitingRoom {
         element
     }
 
-    /// Remove a specific element from the local queue by identifier, decrimenting the metric if the ticket type is normal.
+    // / Remove a specific element from the local queue by identifier, decrementing the metric if the ticket type is normal.
     pub fn remove_from_queue(&mut self, ticket_identifier: TicketIdentifier) {
         if let Some(ticket) = self.local_queue.remove(ticket_identifier) {
             if ticket.ticket_type == TicketType::Normal {
