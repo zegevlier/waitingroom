@@ -16,7 +16,7 @@ pub struct Ticket {
 }
 
 impl Ticket {
-    pub fn new(node_id: u64) -> Self {
+    pub fn new(node_id: NodeId, ticket_refresh_time: Time, ticket_expiry_time: Time) -> Self {
         let identifier = rand::random();
         let now_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -26,8 +26,8 @@ impl Ticket {
         Self {
             identifier,
             join_time: now_time,
-            next_refresh_time: now_time + crate::TICKET_REFRESH_TIME,
-            expiry_time: now_time + crate::TICKET_EXPIRY_TIME,
+            next_refresh_time: now_time + ticket_refresh_time,
+            expiry_time: now_time + ticket_expiry_time,
             node_id,
             previous_position_estimate: usize::MAX,
             ticket_type: TicketType::Normal,
@@ -37,7 +37,9 @@ impl Ticket {
     pub fn new_with_time_and_identifier(
         identifier: TicketIdentifier,
         join_time: Time,
-        node_id: u64,
+        node_id: NodeId,
+        ticket_refresh_time: Time,
+        ticket_expiry_time: Time,
     ) -> Self {
         let now_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -47,8 +49,8 @@ impl Ticket {
         Self {
             identifier,
             join_time,
-            next_refresh_time: now_time + crate::TICKET_REFRESH_TIME,
-            expiry_time: now_time + crate::TICKET_EXPIRY_TIME,
+            next_refresh_time: now_time + ticket_refresh_time,
+            expiry_time: now_time + ticket_expiry_time,
             node_id,
             previous_position_estimate: usize::MAX,
             ticket_type: TicketType::Normal,
@@ -59,7 +61,7 @@ impl Ticket {
         self.ticket_type = TicketType::Skip;
     }
 
-    pub fn new_drain(node_id: u64) -> Self {
+    pub fn new_drain(node_id: NodeId) -> Self {
         let identifier = rand::random();
 
         Self {
@@ -73,7 +75,12 @@ impl Ticket {
         }
     }
 
-    pub fn refresh(&self, position_estimate: usize) -> Self {
+    pub fn refresh(
+        &self,
+        position_estimate: usize,
+        ticket_refresh_time: Time,
+        ticket_expiry_time: Time,
+    ) -> Self {
         let now_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -82,8 +89,8 @@ impl Ticket {
         Self {
             identifier: self.identifier,
             join_time: self.join_time,
-            next_refresh_time: now_time + crate::TICKET_REFRESH_TIME,
-            expiry_time: now_time + crate::TICKET_EXPIRY_TIME,
+            next_refresh_time: now_time + ticket_refresh_time,
+            expiry_time: now_time + ticket_expiry_time,
             node_id: self.node_id,
             previous_position_estimate: position_estimate,
             ticket_type: self.ticket_type,

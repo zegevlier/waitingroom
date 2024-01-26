@@ -14,7 +14,7 @@ use hyper_util::rt::TokioExecutor;
 
 use settings::HttpServerSettings;
 use tokio::time::{self, Duration};
-use waitingroom_basic::BasicWaitingRoom;
+use waitingroom_basic::{BasicWaitingRoom, BasicWaitingRoomSettings};
 use waitingroom_core::pass::Pass;
 use waitingroom_core::ticket::Ticket;
 use waitingroom_core::{WaitingRoomTimerTriggered, WaitingRoomUserTriggered};
@@ -33,10 +33,6 @@ use axum_extra::extract::cookie::{Cookie, Key, SignedCookieJar};
 mod settings;
 
 type Client = hyper_util::client::legacy::Client<HttpConnector, Body>;
-
-const CLEANUP_INTERVAL: u64 = 10 * 1000;
-const ENSURE_CORRECT_COUNT_INTERVAL: u64 = 10 * 1000;
-const SYNC_USER_COUNTS_INTERVAL: u64 = 10 * 1000;
 
 #[derive(Clone)]
 struct AppState {
@@ -173,8 +169,55 @@ async fn handler(
     );
 
     Ok((jar.add(cookie), response))
+}
 
-    // Ok((jar, response))
+/// Set up the timers for the waiting room.
+/// Barring panics, this function will never return.
+async fn set_up_timers(
+    waiting_room: Arc<Mutex<BasicWaitingRoom>>,
+    waiting_room_settings: &BasicWaitingRoomSettings,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    macro_rules! timer {
+        ($name:ident, $interval:expr, $callback:expr) => {
+            let mut $name = time::interval(Duration::from_millis($interval as u64));
+            let waiting_room_clone = waiting_room.clone();
+            let $name = async move {
+                loop {
+                    $name.tick().await;
+                    let mut waiting_room = waiting_room_clone.lock().unwrap();
+                    match $callback(&mut waiting_room) {
+                        Ok(_) => {}
+                        Err(err) => {
+                            log::error!("Error in timer {}: {:?}", stringify!($name), err);
+                        }
+                    }
+                }
+            };
+        };
+        () => {};
+    }
+
+    timer!(
+        cleanup,
+        waiting_room_settings.cleanup_interval,
+        BasicWaitingRoom::cleanup
+    );
+
+    timer!(
+        ensure_correct_count,
+        waiting_room_settings.ensure_correct_user_count_interval,
+        BasicWaitingRoom::ensure_correct_user_count
+    );
+
+    timer!(
+        sync_user_counts,
+        waiting_room_settings.sync_user_counts_interval,
+        BasicWaitingRoom::sync_user_counts
+    );
+
+    tokio::join!(cleanup, ensure_correct_count, sync_user_counts).0;
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -201,44 +244,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         log::info!("Telemetry server is listening on http://{}", tele_serv_addr);
     }
 
-    let waiting_room = Arc::new(Mutex::new(BasicWaitingRoom::new()));
-
-    let mut cleanup_interval = time::interval(Duration::from_millis(CLEANUP_INTERVAL));
-    let mut ensure_correct_count_interval =
-        time::interval(Duration::from_millis(ENSURE_CORRECT_COUNT_INTERVAL));
-    let mut sync_user_counts_interval =
-        time::interval(Duration::from_millis(SYNC_USER_COUNTS_INTERVAL));
-
-    let waiting_room_clone = waiting_room.clone();
-    let cleanup = async move {
-        loop {
-            cleanup_interval.tick().await;
-            let mut waiting_room = waiting_room_clone.lock().unwrap();
-            waiting_room.cleanup().unwrap();
-        }
-    };
-
-    let waiting_room_clone = waiting_room.clone();
-
-    let ensure_correct_count = async move {
-        loop {
-            ensure_correct_count_interval.tick().await;
-            let mut waiting_room = waiting_room_clone.lock().unwrap();
-            waiting_room.ensure_correct_user_count().unwrap();
-        }
-    };
-
-    let waiting_room_clone = waiting_room.clone();
-
-    let sync_user_counts = async move {
-        loop {
-            sync_user_counts_interval.tick().await;
-            let mut waiting_room = waiting_room_clone.lock().unwrap();
-            waiting_room.sync_user_counts().unwrap();
-        }
-    };
+    let waiting_room = Arc::new(Mutex::new(BasicWaitingRoom::new(cli.settings.waiting_room)));
 
     tokio::spawn(server());
+
+    let timers = set_up_timers(waiting_room.clone(), &cli.settings.waiting_room);
 
     let client: Client =
         hyper_util::client::legacy::Client::<(), ()>::builder(TokioExecutor::new())
@@ -256,14 +266,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let webserver = axum::serve(listener, app).into_future();
 
-    tokio::join!(
-        webserver,
-        cleanup,
-        ensure_correct_count,
-        sync_user_counts,
-        tele_serv_fut
-    )
-    .0
-    .unwrap();
+    tokio::join!(webserver, timers, tele_serv_fut).0.unwrap();
     Ok(())
 }

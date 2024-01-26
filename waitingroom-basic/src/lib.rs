@@ -7,13 +7,13 @@ use waitingroom_core::{
 use waitingroom_local_queue::LocalQueue;
 
 mod metrics;
+mod settings;
+
+pub use settings::BasicWaitingRoomSettings;
 
 /// Since we always only have a single node in the basic waiting rooms,
 /// we just hardcode the node id as 0.
 const SELF_NODE_ID: NodeId = 0;
-
-const MIN_ON_SITE_COUNT: usize = 1;
-const MAX_ON_SITE_COUNT: usize = 1;
 
 /// This is a very basic implementation of a waiting room.
 /// It only supports a single node. It's useful for testing.
@@ -21,12 +21,18 @@ pub struct BasicWaitingRoom {
     local_queue: LocalQueue,
     queue_leaving_list: Vec<Ticket>,
     on_site_list: Vec<Pass>,
+
+    settings: BasicWaitingRoomSettings,
 }
 
 impl WaitingRoomUserTriggered for BasicWaitingRoom {
     fn join(&mut self) -> Result<waitingroom_core::ticket::Ticket, WaitingRoomError> {
-        let ticket = waitingroom_core::ticket::Ticket::new(SELF_NODE_ID);
-        self.dequeue(ticket);
+        let ticket = waitingroom_core::ticket::Ticket::new(
+            SELF_NODE_ID,
+            self.settings.ticket_refresh_time,
+            self.settings.ticket_expiry_time,
+        );
+        self.enqueue(ticket);
         Ok(ticket)
     }
 
@@ -42,7 +48,7 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
         if ticket.node_id != SELF_NODE_ID {
             // This should never happen, since we only have a single node.
             // But, if it does, we need to add the ticket to the local queue.
-            self.dequeue(ticket);
+            self.enqueue(ticket);
         }
 
         let position_estimate = match self.local_queue.get_position(ticket.identifier) {
@@ -86,7 +92,11 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
                 Some(ticket)
             })
             .map(|ticket| {
-                *ticket = ticket.refresh(position_estimate);
+                *ticket = ticket.refresh(
+                    position_estimate,
+                    self.settings.ticket_refresh_time,
+                    self.settings.ticket_expiry_time,
+                );
                 ticket
             })
             .unwrap();
@@ -122,7 +132,7 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
         self.queue_leaving_list.retain(|t| t != &ticket);
 
         // Generate a pass for the user.
-        let pass = Pass::from_ticket(ticket);
+        let pass = Pass::from_ticket(ticket, self.settings.pass_expiry_time);
 
         // And add the pass to the users on site list.
         self.on_site_list.push(pass);
@@ -130,7 +140,10 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
         Ok(pass)
     }
 
-    fn disconnect(&mut self, identification: waitingroom_core::Identification) {
+    fn disconnect(
+        &mut self,
+        identification: waitingroom_core::Identification,
+    ) -> Result<(), WaitingRoomError> {
         match identification {
             waitingroom_core::Identification::Ticket(ticket) => {
                 if self.local_queue.contains(ticket.identifier) {
@@ -144,6 +157,8 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
                     .retain(|p| p.identifier != pass.identifier);
             }
         }
+
+        Ok(())
     }
 
     fn validate_and_refresh_pass(
@@ -168,7 +183,7 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
             .iter_mut()
             .find(|p| p.identifier == pass.identifier)
         {
-            pass.refresh(SELF_NODE_ID);
+            pass.refresh(SELF_NODE_ID, self.settings.pass_expiry_time);
         };
 
         Ok(pass)
@@ -214,14 +229,14 @@ impl WaitingRoomTimerTriggered for BasicWaitingRoom {
 
     fn ensure_correct_user_count(&mut self) -> Result<(), WaitingRoomError> {
         // If there are too few users on site, let users out of the queue.
-        if self.on_site_list.len() < MIN_ON_SITE_COUNT {
-            self.let_users_out_of_queue(MIN_ON_SITE_COUNT - self.on_site_list.len())?;
+        if self.on_site_list.len() < self.settings.min_user_count {
+            self.let_users_out_of_queue(self.settings.min_user_count - self.on_site_list.len())?;
         }
         // If there are too many users on the site, add dummy users to the queue.
-        if self.on_site_list.len() > MAX_ON_SITE_COUNT {
+        if self.on_site_list.len() > self.settings.max_user_count {
             // This should never happen
-            for _ in 0..(self.on_site_list.len() - MAX_ON_SITE_COUNT) {
-                self.dequeue(Ticket::new_drain(SELF_NODE_ID));
+            for _ in 0..(self.on_site_list.len() - self.settings.max_user_count) {
+                self.enqueue(Ticket::new_drain(SELF_NODE_ID));
             }
         }
 
@@ -233,18 +248,19 @@ impl WaitingRoomTimerTriggered for BasicWaitingRoom {
 impl WaitingRoomMessageTriggered for BasicWaitingRoom {}
 
 impl BasicWaitingRoom {
-    pub fn new() -> Self {
+    pub fn new(settings: BasicWaitingRoomSettings) -> Self {
         Self {
             local_queue: LocalQueue::new(),
             queue_leaving_list: Vec::new(),
             on_site_list: Vec::new(),
+            settings,
         }
     }
 
     pub fn let_users_out_of_queue(&mut self, count: usize) -> Result<(), WaitingRoomError> {
         // Get the first `count` tickets from the local queue.
         let mut tickets = (0..count)
-            .filter_map(|_| self.enqueue())
+            .filter_map(|_| self.dequeue())
             .collect::<Vec<_>>();
 
         let mut idx = 0;
@@ -259,7 +275,7 @@ impl BasicWaitingRoom {
                 }
                 ticket::TicketType::Skip => {
                     // For this ticket, we need to take someone else out of the queue.
-                    if let Some(ticket) = self.enqueue() {
+                    if let Some(ticket) = self.dequeue() {
                         tickets.push(ticket);
                     }
                 }
@@ -278,27 +294,37 @@ impl BasicWaitingRoom {
         self.local_queue.len()
     }
 
-    pub fn dequeue(&mut self, ticket: Ticket) {
+    pub fn enqueue(&mut self, ticket: Ticket) {
         self.local_queue.enqueue(ticket);
-        metrics::waitingroom_basic::in_queue_count(SELF_NODE_ID).inc();
+        if ticket.ticket_type == ticket::TicketType::Normal {
+            metrics::waitingroom_basic::in_queue_count(SELF_NODE_ID).inc();
+        }
     }
 
-    pub fn enqueue(&mut self) -> Option<Ticket> {
+    pub fn dequeue(&mut self) -> Option<Ticket> {
         let element = self.local_queue.dequeue();
-        if element.is_some() {
+        if element.is_some() && element.as_ref().unwrap().ticket_type == ticket::TicketType::Normal
+        {
             metrics::waitingroom_basic::in_queue_count(SELF_NODE_ID).dec();
         }
         element
     }
 
     pub fn remove_from_queue(&mut self, ticket_identifier: TicketIdentifier) {
-        self.local_queue.remove(ticket_identifier);
-        metrics::waitingroom_basic::in_queue_count(SELF_NODE_ID).dec();
+        if self.local_queue.remove(ticket_identifier).is_some() {
+            metrics::waitingroom_basic::in_queue_count(SELF_NODE_ID).dec();
+        }
     }
-}
 
-impl Default for BasicWaitingRoom {
-    fn default() -> Self {
-        Self::new()
+    pub fn get_cleanup_interval(&self) -> u128 {
+        self.settings.cleanup_interval
+    }
+
+    pub fn get_sync_interval(&self) -> u128 {
+        self.settings.sync_user_counts_interval
+    }
+
+    pub fn get_ensure_correct_count_interval(&self) -> u128 {
+        self.settings.ensure_correct_user_count_interval
     }
 }

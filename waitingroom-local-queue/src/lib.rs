@@ -114,9 +114,9 @@ mod tests {
         let identifier1 = 47156;
         let identifier2 = 81657;
 
-        let ticket0 = Ticket::new_with_time_and_identifier(identifier0, 0, 0);
-        let ticket1 = Ticket::new_with_time_and_identifier(identifier1, 1, 0);
-        let ticket2 = Ticket::new_with_time_and_identifier(identifier2, 2, 0);
+        let ticket0 = Ticket::new_with_time_and_identifier(identifier0, 0, 0, 0, 0);
+        let ticket1 = Ticket::new_with_time_and_identifier(identifier1, 1, 0, 0, 0);
+        let ticket2 = Ticket::new_with_time_and_identifier(identifier2, 2, 0, 0, 0);
 
         queue.enqueue(ticket2);
         queue.enqueue(ticket0);
