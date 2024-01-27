@@ -7,7 +7,7 @@ This contains some things that will happen soon, and some things which might not
 - [ ] Add proper logging and tracing to `waitingroom-http`
 - [ ] Find out the cause + fix the bug causing too many people to be on the site at once
 - [x] Write documentation for `Pass`
-- [ ] Write documentation for `Ticket`
+- [x] Write documentation for `Ticket`
 - [ ] Write documentation for `WaitingroomError`
 - [ ] Make fake user managing tool (TUI based, probably)
 - [x] Ensure consistent usage of `waitingroom` vs `waiting_room`
