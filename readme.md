@@ -10,7 +10,7 @@ This contains some things that will happen soon, and some things which might not
 - [ ] Write documentation for `Ticket`
 - [ ] Write documentation for `WaitingroomError`
 - [ ] Make fake user managing tool (TUI based, probably)
-- [ ] Ensure consistent usage of `waitingroom` vs `waiting_room`
+- [x] Ensure consistent usage of `waitingroom` vs `waiting_room`
 - [x] Run spell-checker on everything
 - [ ] Document metrics and move them to `waitingroom-metrics`
 - [ ] Set up docker container images to make running prometheus and grafana for the dashboard easier

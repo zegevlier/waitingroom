@@ -36,7 +36,7 @@ type Client = hyper_util::client::legacy::Client<HttpConnector, Body>;
 
 #[derive(Clone)]
 struct AppState {
-    waiting_room: Arc<Mutex<BasicWaitingRoom>>,
+    waitingroom: Arc<Mutex<BasicWaitingRoom>>,
     client: Client,
     key: Key,
 }
@@ -64,7 +64,7 @@ async fn handler(
         None => None,
     } {
         let pass = match state
-            .waiting_room
+            .waitingroom
             .lock()
             .unwrap()
             .validate_and_refresh_pass(pass)
@@ -111,7 +111,7 @@ async fn handler(
 
     let (ticket, text) = match ticket {
         Some(ticket) => {
-            let checkin_response = match state.waiting_room.lock().unwrap().check_in(ticket) {
+            let checkin_response = match state.waitingroom.lock().unwrap().check_in(ticket) {
                 Ok(checkin_response) => checkin_response,
                 Err(err) => {
                     return Ok((
@@ -122,7 +122,7 @@ async fn handler(
             };
             if checkin_response.position_estimate == 0 {
                 let pass = state
-                    .waiting_room
+                    .waitingroom
                     .lock()
                     .unwrap()
                     .leave(checkin_response.new_ticket)
@@ -146,7 +146,7 @@ async fn handler(
             }
         }
         None => {
-            let ticket = state.waiting_room.lock().unwrap().join().unwrap();
+            let ticket = state.waitingroom.lock().unwrap().join().unwrap();
             (ticket, "New ticket".to_string())
         }
     };
@@ -174,18 +174,18 @@ async fn handler(
 /// Set up the timers for the waiting room.
 /// Barring panics, this function will never return.
 async fn set_up_timers(
-    waiting_room: Arc<Mutex<BasicWaitingRoom>>,
-    waiting_room_settings: &BasicWaitingRoomSettings,
+    waitingroom: Arc<Mutex<BasicWaitingRoom>>,
+    waitingroom_settings: &BasicWaitingRoomSettings,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     macro_rules! timer {
         ($name:ident, $interval:expr, $callback:expr) => {
             let mut $name = time::interval(Duration::from_millis($interval as u64));
-            let waiting_room_clone = waiting_room.clone();
+            let waitingroom_clone = waitingroom.clone();
             let $name = async move {
                 loop {
                     $name.tick().await;
-                    let mut waiting_room = waiting_room_clone.lock().unwrap();
-                    match $callback(&mut waiting_room) {
+                    let mut waitingroom = waitingroom_clone.lock().unwrap();
+                    match $callback(&mut waitingroom) {
                         Ok(_) => {}
                         Err(err) => {
                             log::error!("Error in timer {}: {:?}", stringify!($name), err);
@@ -199,19 +199,19 @@ async fn set_up_timers(
 
     timer!(
         cleanup,
-        waiting_room_settings.cleanup_interval,
+        waitingroom_settings.cleanup_interval,
         BasicWaitingRoom::cleanup
     );
 
     timer!(
         ensure_correct_count,
-        waiting_room_settings.ensure_correct_user_count_interval,
+        waitingroom_settings.ensure_correct_user_count_interval,
         BasicWaitingRoom::ensure_correct_user_count
     );
 
     timer!(
         sync_user_counts,
-        waiting_room_settings.sync_user_counts_interval,
+        waitingroom_settings.sync_user_counts_interval,
         BasicWaitingRoom::sync_user_counts
     );
 
@@ -247,18 +247,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
-    let waiting_room = Arc::new(Mutex::new(BasicWaitingRoom::new(cli.settings.waiting_room)));
+    let waitingroom = Arc::new(Mutex::new(BasicWaitingRoom::new(cli.settings.waitingroom)));
 
     tokio::spawn(server());
 
-    let timers = set_up_timers(waiting_room.clone(), &cli.settings.waiting_room);
+    let timers = set_up_timers(waitingroom.clone(), &cli.settings.waitingroom);
 
     let client: Client =
         hyper_util::client::legacy::Client::<(), ()>::builder(TokioExecutor::new())
             .build(HttpConnector::new());
 
     let app = Router::new().route("/", get(handler)).with_state(AppState {
-        waiting_room,
+        waitingroom,
         client,
         key: Key::generate(),
     });

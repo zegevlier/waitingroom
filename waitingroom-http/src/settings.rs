@@ -8,5 +8,5 @@ pub(crate) struct HttpServerSettings {
     pub(crate) telemetry: TelemetrySettings,
 
     /// Basic waiting room settings
-    pub(crate) waiting_room: BasicWaitingRoomSettings,
+    pub(crate) waitingroom: BasicWaitingRoomSettings,
 }
