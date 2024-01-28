@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use axum::http::HeaderValue;
 
 use foundations::cli::{Arg, ArgAction, Cli};
+use foundations::settings::net::SocketAddr;
 use foundations::telemetry::{init_with_server, log};
 use hyper::StatusCode;
 use hyper_util::client::legacy::connect::HttpConnector;
@@ -41,13 +42,22 @@ struct AppState {
     key: Key,
 }
 
-async fn server() {
-    let app = Router::new().route("/", get(|| async { "Hello, world!" }));
+async fn server(listening_address: SocketAddr) {
+    let app = Router::new().fallback(get(|req: Request| async move {
+        log::debug!("Request to demo HTTP server");
+        format!(
+            "Congratulations! You're through the waiting room! {}",
+            req.uri()
+        )
+    }));
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+    let listener = tokio::net::TcpListener::bind(std::net::SocketAddr::from(listening_address))
         .await
         .unwrap();
-    println!("listening on {}", listener.local_addr().unwrap());
+    log::info!(
+        "Demo HTTP server listening on http://{}",
+        listener.local_addr().unwrap()
+    );
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -177,6 +187,7 @@ async fn set_up_timers(
     waitingroom: Arc<Mutex<BasicWaitingRoom>>,
     waitingroom_settings: &BasicWaitingRoomSettings,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    log::debug!("Setting up timers...");
     macro_rules! timer {
         ($name:ident, $interval:expr, $callback:expr) => {
             let mut $name = time::interval(Duration::from_millis($interval as u64));
@@ -249,7 +260,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let waitingroom = Arc::new(Mutex::new(BasicWaitingRoom::new(cli.settings.waitingroom)));
 
-    tokio::spawn(server());
+    if cli.settings.demo_http_server.enabled {
+        tokio::spawn(server(cli.settings.demo_http_server.listening_address));
+    }
 
     let timers = set_up_timers(waitingroom.clone(), &cli.settings.waitingroom);
 
