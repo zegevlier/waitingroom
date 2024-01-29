@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use axum::http::HeaderValue;
 
 use foundations::cli::{Arg, ArgAction, Cli};
-use foundations::telemetry::{init_with_server, log};
+use foundations::telemetry::{init_with_server, log, tracing, TelemetryContext};
 use hyper::StatusCode;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::TokioExecutor;
@@ -43,6 +43,70 @@ struct AppState {
     settings: HttpServerSettings,
 }
 
+#[derive(Debug)]
+enum WaitingRoomStatus {
+    NewTicket,
+    TicketRefreshed(usize),
+    InvalidTicket,
+    NewPass,
+    PassRefreshed,
+    InvalidPass,
+}
+
+impl WaitingRoomStatus {
+    fn get_header_value(&self) -> HeaderValue {
+        HeaderValue::from_str(&format!("{:?}", self)).unwrap()
+    }
+
+    fn get_text(&self) -> String {
+        match self {
+            WaitingRoomStatus::NewTicket => "New ticket! Refreshing now...".to_string(),
+            WaitingRoomStatus::TicketRefreshed(pos) => {
+                format!("You are at queue position {}", pos)
+            }
+            WaitingRoomStatus::InvalidTicket => {
+                "Ticket invalid... Rejoining waiting room...".to_string()
+            }
+            WaitingRoomStatus::InvalidPass => {
+                "Pass invalid... Rejoining waiting room...".to_string()
+            }
+            WaitingRoomStatus::NewPass => "You left the waiting room! Redirecting...".to_string(),
+            WaitingRoomStatus::PassRefreshed => {
+                panic!("get_text() should not be called on PassRefreshed")
+            }
+        }
+    }
+}
+
+/// Utility function to create a response with the appropriate headers.
+fn make_response(
+    jar: SignedCookieJar,
+    refresh: Option<u64>,
+    waiting_room_status: WaitingRoomStatus,
+) -> (SignedCookieJar, Response) {
+    let mut response = Response::new(Body::from(waiting_room_status.get_text()));
+    if let Some(refresh) = refresh {
+        response.headers_mut().insert(
+            "Refresh",
+            HeaderValue::from_str(&format!("{}", refresh)).unwrap(),
+        );
+    }
+
+    if let WaitingRoomStatus::TicketRefreshed(pos) = waiting_room_status {
+        response.headers_mut().insert(
+            "X-WR-Position",
+            HeaderValue::from_str(&format!("{}", pos)).unwrap(),
+        );
+    }
+
+    response.headers_mut().insert(
+        "X-WR-Status",
+        HeaderValue::from_str(&format!("{:?}", waiting_room_status)).unwrap(),
+    );
+    (jar, response)
+}
+
+#[tracing::span_fn("handler")]
 async fn handler(
     State(state): State<AppState>,
     mut req: Request,
@@ -51,11 +115,15 @@ async fn handler(
     let jar = SignedCookieJar::from_headers(req.headers(), state.key.clone());
     if let Some(pass) = match jar.get("pass") {
         Some(cookie) => {
+            log::debug!("Pass cookie found");
             let pass: Pass = serde_json::from_str(cookie.value()).unwrap();
             Some(pass)
         }
         None => None,
     } {
+        log::add_fields! {
+            "pass_id" => pass.identifier,
+        }
         let pass = match state
             .waitingroom
             .lock()
@@ -63,8 +131,16 @@ async fn handler(
             .validate_and_refresh_pass(pass)
         {
             Ok(pass) => pass,
-            Err(_) => return Ok((jar, Response::new(Body::from("Pass invalid")))),
+            Err(err) => {
+                log::debug!("Pass was invalid: {:?}", err);
+                return Ok(make_response(
+                    jar.remove("pass"),
+                    Some(3),
+                    WaitingRoomStatus::InvalidPass,
+                ));
+            }
         };
+        log::debug!("Pass refreshed");
         let cookie = Cookie::build(("pass", serde_json::to_string(&pass).unwrap()))
             .secure(true)
             .http_only(true);
@@ -87,81 +163,100 @@ async fn handler(
             .map_err(|_| StatusCode::BAD_REQUEST)?
             .into_response();
 
-        response
-            .headers_mut()
-            .insert("X-WaitingRoom-Type", HeaderValue::from_static("Basic"));
+        response.headers_mut().insert(
+            "X-WR-Status",
+            WaitingRoomStatus::PassRefreshed.get_header_value(),
+        );
 
         return Ok((jar.add(cookie), response));
     };
 
     let ticket: Option<Ticket> = match jar.get("ticket") {
         Some(cookie) => {
+            log::debug!("Ticket cookie found");
             let ticket = serde_json::from_str(cookie.value()).unwrap();
             Some(ticket)
         }
         None => None,
     };
 
-    let (ticket, text) = match ticket {
+    match ticket {
         Some(ticket) => {
+            log::add_fields! {
+                "ticket_id" => ticket.identifier,
+            }
             let checkin_response = match state.waitingroom.lock().unwrap().check_in(ticket) {
                 Ok(checkin_response) => checkin_response,
                 Err(err) => {
-                    return Ok((
-                        jar,
-                        Response::new(Body::from(format!("Ticket invalid: {:?}", err))),
-                    ))
+                    log::debug!("Ticket was invalid: {:?}", err);
+                    return Ok(make_response(
+                        jar.remove("ticket"),
+                        Some(3),
+                        WaitingRoomStatus::InvalidTicket,
+                    ));
                 }
             };
+
+            log::debug!("Ticket refreshed");
+
             if checkin_response.position_estimate == 0 {
+                log::debug!("User is at the front of the queue");
                 let pass = state
                     .waitingroom
                     .lock()
                     .unwrap()
                     .leave(checkin_response.new_ticket)
                     .unwrap();
-                let cookie = Cookie::build(("pass", serde_json::to_string(&pass).unwrap()));
-                let mut response = Response::new(Body::from(
-                    "You have left the queue! Redirecting...".to_string(),
+
+                let cookie = Cookie::build(("pass", serde_json::to_string(&pass).unwrap()))
+                    .secure(true)
+                    .http_only(true);
+                return Ok(make_response(
+                    jar.add(cookie).remove("ticket"),
+                    Some(1),
+                    WaitingRoomStatus::NewPass,
                 ));
-                response
-                    .headers_mut()
-                    .insert("Refresh", HeaderValue::from_static("0"));
-                return Ok((jar.add(cookie), response));
             } else {
-                (
-                    checkin_response.new_ticket,
-                    format!(
-                        "You are at queue position {}",
-                        checkin_response.position_estimate
+                log::debug!("User is at position {}", checkin_response.position_estimate);
+                let cookie = Cookie::build((
+                    "ticket",
+                    serde_json::to_string(&checkin_response.new_ticket).unwrap(),
+                ))
+                .secure(true)
+                .http_only(true);
+
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis();
+
+                return Ok(make_response(
+                    jar.add(cookie),
+                    Some(
+                        ((checkin_response.new_ticket.next_refresh_time as i128 - now as i128)
+                            / 1000) as u64,
                     ),
-                )
+                    WaitingRoomStatus::TicketRefreshed(checkin_response.position_estimate),
+                ));
             }
         }
         None => {
             let ticket = state.waitingroom.lock().unwrap().join().unwrap();
-            (ticket, "New ticket".to_string())
+            log::add_fields! {
+                "ticket_id" => ticket.identifier,
+            }
+            log::debug!("New ticket issued");
+            return Ok(make_response(
+                jar.add(
+                    Cookie::build(("ticket", serde_json::to_string(&ticket).unwrap()))
+                        .secure(true)
+                        .http_only(true),
+                ),
+                Some(0),
+                WaitingRoomStatus::NewTicket,
+            ));
         }
-    };
-
-    let cookie = Cookie::build(("ticket", serde_json::to_string(&ticket).unwrap()))
-        .secure(true)
-        .http_only(true);
-    let mut response = Response::new(Body::from(text));
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-    response.headers_mut().insert(
-        "Refresh",
-        HeaderValue::from_str(&format!(
-            "{}",
-            ((ticket.next_refresh_time as i128 - now as i128) / 1000)
-        ))
-        .unwrap(),
-    );
-
-    Ok((jar.add(cookie), response))
+    }
 }
 
 #[tokio::main]
@@ -206,12 +301,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         hyper_util::client::legacy::Client::<(), ()>::builder(TokioExecutor::new())
             .build(HttpConnector::new());
 
-    let app = Router::new().fallback(get(handler)).with_state(AppState {
-        waitingroom,
-        client,
-        key: Key::from(&hex::decode(&cli.settings.cookie_secret)?),
-        settings: cli.settings.clone(),
-    });
+    let app = Router::new()
+        .fallback(get(|state, req| {
+            // Each request gets its own telemetry context.
+            TelemetryContext::current()
+                .with_forked_log()
+                .apply(handler(state, req))
+        }))
+        .with_state(AppState {
+            waitingroom,
+            client,
+            key: Key::from(&hex::decode(&cli.settings.cookie_secret)?),
+            settings: cli.settings.clone(),
+        });
 
     let listener =
         tokio::net::TcpListener::bind(std::net::SocketAddr::from(cli.settings.listening_address))

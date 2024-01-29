@@ -71,7 +71,7 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
         }
 
         let position_estimate = match self.local_queue.get_position(ticket.identifier) {
-            Some(position) => position.max(1), // 0 is reserved for users who are allowed to leave the queue.
+            Some(position) => position + 1, // 0 is reserved for users who are allowed to leave the queue.
             None => {
                 if self.queue_leaving_list.contains(&ticket) {
                     // The ticket is in the queue leaving list.
@@ -259,12 +259,16 @@ impl WaitingRoomTimerTriggered for BasicWaitingRoom {
     }
 
     fn ensure_correct_user_count(&mut self) -> Result<(), WaitingRoomError> {
+        // We use this user count, because people that are about to leave the queue
+        // should be counted as users on site.
+        let user_count = self.on_site_list.len() + self.queue_leaving_list.len();
+
         // If there are too few users on site, let users out of the queue.
-        if self.on_site_list.len() < self.settings.min_user_count {
+        if user_count < self.settings.min_user_count {
             self.let_users_out_of_queue(self.settings.min_user_count - self.on_site_list.len())?;
         }
         // If there are too many users on the site, add dummy users to the queue.
-        if self.on_site_list.len() > self.settings.max_user_count {
+        if user_count > self.settings.max_user_count {
             // This should never happen
             for _ in 0..(self.on_site_list.len() - self.settings.max_user_count) {
                 self.enqueue(Ticket::new_drain(SELF_NODE_ID));

@@ -4,11 +4,11 @@ This is a waiting room implementation as part of my Bachelor's thesis in Computi
 
 ## Current to-do list
 This contains some things that will happen soon, and some things which might not happen at all. It is (roughly) in order of what I will do first, and some tasks are going to be split in more, smaller tasks.
-- [ ] Add proper logging and tracing to `waitingroom-http`
-- [ ] Find out the cause + fix the bug causing too many people to be on the site at once
+- [x] Add proper logging and tracing to `waitingroom-http`
+- [x] Find out the cause + fix the bug causing too many people to be on the site at once
 - [x] Write documentation for `Pass`
 - [x] Write documentation for `Ticket`
-- [ ] Write documentation for `WaitingroomError`
+- [ ] Update `WaitingroomError` + write documentation for it
 - [ ] Make fake user managing tool (TUI based, probably)
 - [x] Ensure consistent usage of `waitingroom` vs `waiting_room`
 - [x] Run spell-checker on everything
