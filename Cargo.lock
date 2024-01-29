@@ -2229,6 +2229,7 @@ dependencies = [
  "axum",
  "axum-extra",
  "foundations",
+ "hex",
  "http-body-util",
  "hyper 1.1.0",
  "hyper-util",

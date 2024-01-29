@@ -95,6 +95,15 @@ waitingroom:
   # The time in milliseconds until a pass expires if it is not used.
   # Passes are refreshed automatically when they are used.
   pass_expiry_time: 120000
+# Settings for the built-in demo HTTP server
+demo_http_server:
+  # Whether or not to enable the demo HTTP server
+  enabled: true
+  # What address the demo HTTP server should be listening on.
+  # This is ignored if enabled is false.
+  listening_address: "127.0.0.1:8052"
+# Timer settings
+timer:
   # The time in milliseconds between user count syncs across nodes.
   # For the basic waiting room, this is a no-op.
   sync_user_counts_interval: 10000
@@ -103,3 +112,9 @@ waitingroom:
   # The time in milliseconds between ensuring that correct number
   # of users are on the site.
   ensure_correct_user_count_interval: 10000
+# Cookie secret
+cookie_secret: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+# Webserver listening address
+listening_address: "127.0.0.1:8051"
+# Address of the webserver behind the proxy
+proxy_address: "127.0.0.1:8052"

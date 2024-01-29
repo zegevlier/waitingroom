@@ -20,15 +20,6 @@ pub struct BasicWaitingRoomSettings {
     /// The time in milliseconds until a pass expires if it is not used.
     /// Passes are refreshed automatically when they are used.
     pub pass_expiry_time: u128,
-
-    /// The time in milliseconds between user count syncs across nodes.
-    /// For the basic waiting room, this is a no-op.
-    pub sync_user_counts_interval: u128,
-    /// The time in milliseconds between cleanup operations.
-    pub cleanup_interval: u128,
-    /// The time in milliseconds between ensuring that correct number
-    /// of users are on the site.
-    pub ensure_correct_user_count_interval: u128,
 }
 
 impl Default for BasicWaitingRoomSettings {
@@ -40,10 +31,6 @@ impl Default for BasicWaitingRoomSettings {
             ticket_refresh_time: 20 * 1000,
             ticket_expiry_time: 45 * 1000,
             pass_expiry_time: 120 * 1000,
-
-            sync_user_counts_interval: 10 * 1000,
-            cleanup_interval: 10 * 1000,
-            ensure_correct_user_count_interval: 10 * 1000,
         }
     }
 }

@@ -348,16 +348,4 @@ impl BasicWaitingRoom {
             }
         }
     }
-
-    pub fn get_cleanup_interval(&self) -> u128 {
-        self.settings.cleanup_interval
-    }
-
-    pub fn get_sync_interval(&self) -> u128 {
-        self.settings.sync_user_counts_interval
-    }
-
-    pub fn get_ensure_correct_count_interval(&self) -> u128 {
-        self.settings.ensure_correct_user_count_interval
-    }
 }

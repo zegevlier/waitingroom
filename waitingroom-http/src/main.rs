@@ -7,18 +7,16 @@ use std::sync::{Arc, Mutex};
 use axum::http::HeaderValue;
 
 use foundations::cli::{Arg, ArgAction, Cli};
-use foundations::settings::net::SocketAddr;
 use foundations::telemetry::{init_with_server, log};
 use hyper::StatusCode;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::TokioExecutor;
 
 use settings::HttpServerSettings;
-use tokio::time::{self, Duration};
-use waitingroom_basic::{BasicWaitingRoom, BasicWaitingRoomSettings};
+use waitingroom_basic::BasicWaitingRoom;
 use waitingroom_core::pass::Pass;
 use waitingroom_core::ticket::Ticket;
-use waitingroom_core::{WaitingRoomTimerTriggered, WaitingRoomUserTriggered};
+use waitingroom_core::WaitingRoomUserTriggered;
 
 use axum::{
     body::Body,
@@ -31,7 +29,9 @@ use axum::{
 
 use axum_extra::extract::cookie::{Cookie, Key, SignedCookieJar};
 
+mod demo_server;
 mod settings;
+mod timers;
 
 type Client = hyper_util::client::legacy::Client<HttpConnector, Body>;
 
@@ -40,31 +40,14 @@ struct AppState {
     waitingroom: Arc<Mutex<BasicWaitingRoom>>,
     client: Client,
     key: Key,
-}
-
-async fn server(listening_address: SocketAddr) {
-    let app = Router::new().fallback(get(|req: Request| async move {
-        log::debug!("Request to demo HTTP server");
-        format!(
-            "Congratulations! You're through the waiting room! {}",
-            req.uri()
-        )
-    }));
-
-    let listener = tokio::net::TcpListener::bind(std::net::SocketAddr::from(listening_address))
-        .await
-        .unwrap();
-    log::info!(
-        "Demo HTTP server listening on http://{}",
-        listener.local_addr().unwrap()
-    );
-    axum::serve(listener, app).await.unwrap();
+    settings: HttpServerSettings,
 }
 
 async fn handler(
     State(state): State<AppState>,
     mut req: Request,
 ) -> Result<(SignedCookieJar, Response), StatusCode> {
+    log::debug!("Request to waiting room");
     let jar = SignedCookieJar::from_headers(req.headers(), state.key.clone());
     if let Some(pass) = match jar.get("pass") {
         Some(cookie) => {
@@ -93,7 +76,7 @@ async fn handler(
             .map(|v| v.as_str())
             .unwrap_or(path);
 
-        let uri = format!("http://127.0.0.1:3000{}", path_query);
+        let uri = format!("http://{}{}", state.settings.proxy_address, path_query);
 
         *req.uri_mut() = Uri::try_from(uri).unwrap();
 
@@ -181,56 +164,6 @@ async fn handler(
     Ok((jar.add(cookie), response))
 }
 
-/// Set up the timers for the waiting room.
-/// Barring panics, this function will never return.
-async fn set_up_timers(
-    waitingroom: Arc<Mutex<BasicWaitingRoom>>,
-    waitingroom_settings: &BasicWaitingRoomSettings,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    log::debug!("Setting up timers...");
-    macro_rules! timer {
-        ($name:ident, $interval:expr, $callback:expr) => {
-            let mut $name = time::interval(Duration::from_millis($interval as u64));
-            let waitingroom_clone = waitingroom.clone();
-            let $name = async move {
-                loop {
-                    $name.tick().await;
-                    let mut waitingroom = waitingroom_clone.lock().unwrap();
-                    match $callback(&mut waitingroom) {
-                        Ok(_) => {}
-                        Err(err) => {
-                            log::error!("Error in timer {}: {:?}", stringify!($name), err);
-                        }
-                    }
-                }
-            };
-        };
-        () => {};
-    }
-
-    timer!(
-        cleanup,
-        waitingroom_settings.cleanup_interval,
-        BasicWaitingRoom::cleanup
-    );
-
-    timer!(
-        ensure_correct_count,
-        waitingroom_settings.ensure_correct_user_count_interval,
-        BasicWaitingRoom::ensure_correct_user_count
-    );
-
-    timer!(
-        sync_user_counts,
-        waitingroom_settings.sync_user_counts_interval,
-        BasicWaitingRoom::sync_user_counts
-    );
-
-    tokio::join!(cleanup, ensure_correct_count, sync_user_counts).0;
-
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Obtain service information from Cargo.toml
@@ -248,8 +181,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         return Ok(());
     }
 
-    // Initialize telemetry with the settings obtained from the config. Don't drive the telemetry
-    // server yet - we have some extra security-related steps to do.
+    // Initialize telemetry with the settings obtained from the config.
     let telemetry_server_fut = init_with_server(&service_info, &cli.settings.telemetry, vec![])?;
     if let Some(telemetry_server_addr) = telemetry_server_fut.server_addr() {
         log::info!(
@@ -258,32 +190,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
-    let waitingroom = Arc::new(Mutex::new(BasicWaitingRoom::new(cli.settings.waitingroom)));
-
+    // Only start the demo HTTP server if it is enabled in the config.
     if cli.settings.demo_http_server.enabled {
-        tokio::spawn(server(cli.settings.demo_http_server.listening_address));
+        tokio::spawn(demo_server::demo_server(
+            cli.settings.demo_http_server.listening_address,
+        ));
     }
 
-    let timers = set_up_timers(waitingroom.clone(), &cli.settings.waitingroom);
+    // The waiting room is in an Arc<Mutex<_>>, because it does not support any concurrency.
+    let waitingroom = Arc::new(Mutex::new(BasicWaitingRoom::new(cli.settings.waitingroom)));
+
+    let timers = timers::timers(waitingroom.clone(), &cli.settings.timer);
 
     let client: Client =
         hyper_util::client::legacy::Client::<(), ()>::builder(TokioExecutor::new())
             .build(HttpConnector::new());
 
-    let app = Router::new().route("/", get(handler)).with_state(AppState {
+    let app = Router::new().fallback(get(handler)).with_state(AppState {
         waitingroom,
         client,
-        key: Key::generate(),
+        key: Key::from(&hex::decode(&cli.settings.cookie_secret)?),
+        settings: cli.settings.clone(),
     });
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:4000")
-        .await
-        .unwrap();
+    let listener =
+        tokio::net::TcpListener::bind(std::net::SocketAddr::from(cli.settings.listening_address))
+            .await
+            .unwrap();
+    log::info!(
+        "Waiting room listening on http://{}",
+        listener.local_addr().unwrap()
+    );
 
     let web_server = axum::serve(listener, app).into_future();
 
-    tokio::join!(web_server, timers, telemetry_server_fut)
-        .0
+    tokio::join!(timers, web_server, telemetry_server_fut)
+        .2
         .unwrap();
     Ok(())
 }
