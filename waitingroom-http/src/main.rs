@@ -252,7 +252,7 @@ async fn handler(
                         .secure(true)
                         .http_only(true),
                 ),
-                Some(0),
+                Some(1),
                 WaitingRoomStatus::NewTicket,
             ));
         }
