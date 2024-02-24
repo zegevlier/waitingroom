@@ -86,7 +86,8 @@ pub enum Identification {
 
 /// This utility function is used to get the current time in milliseconds since the UNIX epoch.
 /// This is used to set the join time, refresh time and expiry time of tickets and passes.
-pub(crate) fn get_now_time() -> Time {
+/// TODO: Replace this with a separate Time struct.
+pub fn get_now_time() -> Time {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
