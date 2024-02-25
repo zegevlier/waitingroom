@@ -1,9 +1,8 @@
 use std::error;
 
 use ratatui::widgets::{ScrollbarState, TableState};
-use waitingroom_core::Time;
 
-use crate::ui::ITEM_HEIGHT;
+use crate::{task::UserStatus, ui::ITEM_HEIGHT};
 
 /// Application result type.
 pub type AppResult<T> = std::result::Result<T, Box<dyn error::Error>>;
@@ -17,14 +16,6 @@ pub struct App {
     pub users: Vec<UserStatus>,
     pub table_state: TableState,
     pub scroll_state: ScrollbarState,
-}
-
-#[derive(Debug)]
-pub struct UserStatus {
-    pub user_id: i32,
-    pub status: crate::task::Status,
-    pub next_refresh: Option<Time>,
-    pub queue_position: Option<usize>,
 }
 
 impl App {
@@ -48,15 +39,16 @@ impl App {
                     crate::task::Status::Starting => {
                         panic!("Invalid state: User is already in the list, but received a Starting status");
                     }
-                    crate::task::Status::Waiting {
+                    crate::task::Status::InQueue {
                         position,
                         next_refresh,
                     } => {
                         user.status = update.status;
                         user.next_refresh = Some(next_refresh);
-                        user.queue_position = Some(position);
+                        user.queue_position = position;
                     }
                     crate::task::Status::OnSite { next_refresh } => {
+                        user.queue_position = None;
                         user.status = update.status;
                         user.next_refresh = Some(next_refresh);
                     }
@@ -76,9 +68,7 @@ impl App {
                     queue_position: None,
                 });
             } else {
-                dbg!(update);
-                dbg!(&self.users);
-                panic!("Invalid state: User is not in the list");
+                println!("User is not in list, and the user is not being added.");
             }
         }
         self.scroll_state = self.scroll_state.content_length(self.users.len() * ITEM_HEIGHT);
