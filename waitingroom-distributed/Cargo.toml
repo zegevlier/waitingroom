@@ -1,5 +1,5 @@
 [package]
-name = "waitingroom-basic"
+name = "waitingroom-distributed"
 version = "0.1.0"
 edition = "2021"
 

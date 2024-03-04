@@ -2764,7 +2764,6 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 name = "waitingroom-basic"
 version = "0.1.0"
 dependencies = [
- "foundations",
  "waitingroom-core",
  "waitingroom-local-queue",
 ]
@@ -2773,8 +2772,17 @@ dependencies = [
 name = "waitingroom-core"
 version = "0.1.0"
 dependencies = [
+ "foundations",
  "rand",
  "serde",
+]
+
+[[package]]
+name = "waitingroom-distributed"
+version = "0.1.0"
+dependencies = [
+ "waitingroom-core",
+ "waitingroom-local-queue",
 ]
 
 [[package]]

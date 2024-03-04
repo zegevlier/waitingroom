@@ -1,7 +1,7 @@
 use foundations::settings::net::SocketAddr;
 use foundations::settings::settings;
 use foundations::telemetry::settings::TelemetrySettings;
-use waitingroom_basic::BasicWaitingRoomSettings;
+use waitingroom_basic::GeneralWaitingRoomSettings;
 
 #[settings(impl_default = false)]
 pub(crate) struct DemoHTTPServerSettings {
@@ -53,7 +53,7 @@ pub(crate) struct HttpServerSettings {
     pub(crate) telemetry: TelemetrySettings,
 
     /// Basic waiting room settings
-    pub(crate) waitingroom: BasicWaitingRoomSettings,
+    pub(crate) waitingroom: GeneralWaitingRoomSettings,
 
     /// Settings for the built-in demo HTTP server
     pub(crate) demo_http_server: DemoHTTPServerSettings,

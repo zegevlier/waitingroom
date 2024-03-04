@@ -16,7 +16,7 @@ const SELF_NODE_ID: NodeId = 0;
 
 /// This is a very basic implementation of a waiting room.
 /// It only supports a single node. It's useful for testing.
-pub struct BasicWaitingRoom {
+pub struct DistributedWaitingRoom {
     local_queue: LocalQueue,
     queue_leaving_list: Vec<Ticket>,
     on_site_list: Vec<Pass>,
@@ -43,7 +43,7 @@ where
     removed_count
 }
 
-impl WaitingRoomUserTriggered for BasicWaitingRoom {
+impl WaitingRoomUserTriggered for DistributedWaitingRoom {
     fn join(&mut self) -> Result<waitingroom_core::ticket::Ticket, WaitingRoomError> {
         let ticket = waitingroom_core::ticket::Ticket::new(
             SELF_NODE_ID,
@@ -221,7 +221,7 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
     }
 }
 
-impl WaitingRoomTimerTriggered for BasicWaitingRoom {
+impl WaitingRoomTimerTriggered for DistributedWaitingRoom {
     fn cleanup(&mut self) -> Result<(), WaitingRoomError> {
         let now_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -278,9 +278,9 @@ impl WaitingRoomTimerTriggered for BasicWaitingRoom {
 }
 
 // Since the basic waiting room only has a single node, these are all unreachable, since they should never be called.
-impl WaitingRoomMessageTriggered for BasicWaitingRoom {}
+impl WaitingRoomMessageTriggered for DistributedWaitingRoom {}
 
-impl BasicWaitingRoom {
+impl DistributedWaitingRoom {
     pub fn new(settings: GeneralWaitingRoomSettings) -> Self {
         Self {
             local_queue: LocalQueue::new(),

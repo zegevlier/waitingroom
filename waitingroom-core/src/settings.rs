@@ -2,7 +2,7 @@ use foundations::settings::settings;
 
 #[settings(impl_default = false)]
 #[derive(Copy)]
-pub struct BasicWaitingRoomSettings {
+pub struct GeneralWaitingRoomSettings {
     /// The minimum number of users that will be allowed on the site.
     /// If there are less than this number of users on the site,
     /// more users are let in.
@@ -22,7 +22,7 @@ pub struct BasicWaitingRoomSettings {
     pub pass_expiry_time: u128,
 }
 
-impl Default for BasicWaitingRoomSettings {
+impl Default for GeneralWaitingRoomSettings {
     fn default() -> Self {
         Self {
             min_user_count: 20,

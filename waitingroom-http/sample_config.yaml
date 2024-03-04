@@ -82,19 +82,19 @@ waitingroom:
   # The minimum number of users that will be allowed on the site.
   # If there are less than this number of users on the site,
   # more users are let in.
-  min_user_count: 20
+  min_user_count: 1
   # The maximum number of users that will be allowed on the site.
   # If there are more than this number of users on the site,
   # users are not let in a number of times.
-  max_user_count: 20
+  max_user_count: 1
   # The time in milliseconds between ticket refreshes carried out by the client.
-  ticket_refresh_time: 20000
+  ticket_refresh_time: 2000
   # The time in milliseconds until a ticket expires if it is not refreshed.
   # This should be greater than the ticket refresh time.
-  ticket_expiry_time: 45000
+  ticket_expiry_time: 4500
   # The time in milliseconds until a pass expires if it is not used.
   # Passes are refreshed automatically when they are used.
-  pass_expiry_time: 120000
+  pass_expiry_time: 6000
 # Settings for the built-in demo HTTP server
 demo_http_server:
   # Whether or not to enable the demo HTTP server
@@ -106,12 +106,12 @@ demo_http_server:
 timer:
   # The time in milliseconds between user count syncs across nodes.
   # For the basic waiting room, this is a no-op.
-  sync_user_counts_interval: 10000
+  sync_user_counts_interval: 3000
   # The time in milliseconds between cleanup operations.
-  cleanup_interval: 10000
+  cleanup_interval: 3000
   # The time in milliseconds between ensuring that correct number
   # of users are on the site.
-  ensure_correct_user_count_interval: 10000
+  ensure_correct_user_count_interval: 3000
 # Cookie secret
 cookie_secret: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 # Webserver listening address

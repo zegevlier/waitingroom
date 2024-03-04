@@ -2,7 +2,9 @@ use pass::Pass;
 use ticket::Ticket;
 
 mod error;
+pub mod metrics;
 pub mod pass;
+pub mod settings;
 pub mod ticket;
 
 pub use error::WaitingRoomError;

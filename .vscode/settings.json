@@ -1,9 +1,4 @@
 {
-    "cSpell.words": [
-        "checkin",
-        "crossterm",
-        "QPID",
-        "ratatui",
-        "waitingroom"
-    ]
+  "cSpell.words": ["checkin", "crossterm", "QPID", "ratatui", "waitingroom"],
+  "rust-analyzer.linkedProjects": ["./waitingroom-core/Cargo.toml"]
 }
