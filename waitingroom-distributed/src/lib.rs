@@ -1,52 +1,29 @@
 use waitingroom_core::{
     metrics,
     pass::Pass,
-    settings,
+    retain_with_count, settings,
     ticket::{Ticket, TicketIdentifier, TicketType},
     NodeId, WaitingRoomError, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered,
     WaitingRoomUserTriggered,
 };
 use waitingroom_local_queue::LocalQueue;
 
-pub use settings::GeneralWaitingRoomSettings;
+use settings::GeneralWaitingRoomSettings;
 
-/// Since we always only have a single node in the basic waiting rooms,
-/// we just hardcode the node id as 0.
-const SELF_NODE_ID: NodeId = 0;
-
-/// This is a very basic implementation of a waiting room.
-/// It only supports a single node. It's useful for testing.
+/// This is the waiting room implementation described in the associated paper.
 pub struct DistributedWaitingRoom {
     local_queue: LocalQueue,
-    queue_leaving_list: Vec<Ticket>,
-    on_site_list: Vec<Pass>,
+    local_queue_leaving_list: Vec<Ticket>,
+    local_on_site_list: Vec<Pass>,
 
     settings: GeneralWaitingRoomSettings,
-}
-
-// TODO: Move this function elsewhere
-/// This function works like retain, except it counts the number of elements removed.
-/// There is probably a better solution for this.
-fn remove_and_return_count<T, F>(vec: &mut Vec<T>, condition: F) -> u64
-where
-    F: Fn(&T) -> bool,
-{
-    let mut removed_count = 0;
-    vec.retain(|v| {
-        if condition(v) {
-            true
-        } else {
-            removed_count += 1;
-            false
-        }
-    });
-    removed_count
+    node_id: NodeId,
 }
 
 impl WaitingRoomUserTriggered for DistributedWaitingRoom {
     fn join(&mut self) -> Result<waitingroom_core::ticket::Ticket, WaitingRoomError> {
         let ticket = waitingroom_core::ticket::Ticket::new(
-            SELF_NODE_ID,
+            self.node_id,
             self.settings.ticket_refresh_time,
             self.settings.ticket_expiry_time,
         );
@@ -63,7 +40,7 @@ impl WaitingRoomUserTriggered for DistributedWaitingRoom {
             return Err(WaitingRoomError::TicketExpired);
         }
 
-        if ticket.node_id != SELF_NODE_ID {
+        if ticket.node_id != self.node_id {
             // This should never happen, since we only have a single node.
             // But, if it does, we need to add the ticket to the local queue.
             self.enqueue(ticket);
@@ -72,7 +49,7 @@ impl WaitingRoomUserTriggered for DistributedWaitingRoom {
         let position_estimate = match self.local_queue.get_position(ticket.identifier) {
             Some(position) => position + 1, // 0 is reserved for users who are allowed to leave the queue.
             None => {
-                if self.queue_leaving_list.contains(&ticket) {
+                if self.local_queue_leaving_list.contains(&ticket) {
                     // The ticket is in the queue leaving list.
                     // This means that the user can now leave the queue.
                     // When this happens, we send the user's position estimate as 0.
@@ -103,7 +80,7 @@ impl WaitingRoomUserTriggered for DistributedWaitingRoom {
                 // If it's not in the local queue but we did get here, it's in the queue leaving list.
                 // So, we need to update the ticket in the queue leaving list.
                 let ticket = self
-                    .queue_leaving_list
+                    .local_queue_leaving_list
                     .iter_mut()
                     .find(|t| t.identifier == ticket.identifier)
                     .unwrap();
@@ -134,29 +111,29 @@ impl WaitingRoomUserTriggered for DistributedWaitingRoom {
             return Err(WaitingRoomError::TicketExpired);
         }
 
-        if ticket.node_id != SELF_NODE_ID {
+        if ticket.node_id != self.node_id {
             // This should never happen, since we only have a single node.
             // But, if it does, the user will need to re-join the queue.
             return Err(WaitingRoomError::TicketAtWrongNode);
         }
 
-        if !self.queue_leaving_list.contains(&ticket) {
+        if !self.local_queue_leaving_list.contains(&ticket) {
             // The user is not allowed to leave the queue yet.
             return Err(WaitingRoomError::TicketCannotLeaveYet);
         }
 
         // The user is allowed to leave the queue.
         // We remove the ticket from the queue leaving list.
-        self.queue_leaving_list.retain(|t| t != &ticket);
+        self.local_queue_leaving_list.retain(|t| t != &ticket);
         // We know the number of items removed here is always 1.
-        metrics::waitingroom::to_be_let_in_count(SELF_NODE_ID).dec();
+        metrics::waitingroom::to_be_let_in_count(self.node_id).dec();
 
         // Generate a pass for the user.
         let pass = Pass::from_ticket(ticket, self.settings.pass_expiry_time);
 
         // And add the pass to the users on site list.
-        self.on_site_list.push(pass);
-        metrics::waitingroom::on_site_count(SELF_NODE_ID).inc();
+        self.local_on_site_list.push(pass);
+        metrics::waitingroom::on_site_count(self.node_id).inc();
 
         Ok(pass)
     }
@@ -173,15 +150,15 @@ impl WaitingRoomUserTriggered for DistributedWaitingRoom {
                     // Since we don't know whether the value is in the queue, and we cannot assume it is actually removed,
                     // we count the number of items removed from the list (either 0 or 1) and decrement the metric by that.
                     let removed_count =
-                        remove_and_return_count(&mut self.queue_leaving_list, |t| t != &ticket);
-                    metrics::waitingroom::to_be_let_in_count(SELF_NODE_ID).dec_by(removed_count);
+                        retain_with_count(&mut self.local_queue_leaving_list, |t| t != &ticket);
+                    metrics::waitingroom::to_be_let_in_count(self.node_id).dec_by(removed_count);
                 }
             }
             waitingroom_core::Identification::Pass(pass) => {
-                let removed_count = remove_and_return_count(&mut self.on_site_list, |p| {
+                let removed_count = retain_with_count(&mut self.local_on_site_list, |p| {
                     p.identifier != pass.identifier
                 });
-                metrics::waitingroom::on_site_count(SELF_NODE_ID).dec_by(removed_count);
+                metrics::waitingroom::on_site_count(self.node_id).dec_by(removed_count);
             }
         }
 
@@ -201,17 +178,17 @@ impl WaitingRoomUserTriggered for DistributedWaitingRoom {
             return Err(WaitingRoomError::PassExpired);
         }
 
-        if pass.node_id != SELF_NODE_ID {
-            self.on_site_list.push(pass);
-            metrics::waitingroom::on_site_count(SELF_NODE_ID).inc();
+        if pass.node_id != self.node_id {
+            self.local_on_site_list.push(pass);
+            metrics::waitingroom::on_site_count(self.node_id).inc();
         }
 
         let pass = self
-            .on_site_list
+            .local_on_site_list
             .iter_mut()
             .find(|p| p.identifier == pass.identifier)
             .map(|pass| {
-                *pass = pass.refresh(SELF_NODE_ID, self.settings.pass_expiry_time);
+                *pass = pass.refresh(self.node_id, self.settings.pass_expiry_time);
                 pass
             });
         match pass {
@@ -230,22 +207,23 @@ impl WaitingRoomTimerTriggered for DistributedWaitingRoom {
 
         // Remove expired tickets from the local queue.
         let removed_count = self.local_queue.remove_expired(now_time);
-        metrics::waitingroom::in_queue_count(SELF_NODE_ID).dec_by(removed_count);
+        metrics::waitingroom::in_queue_count(self.node_id).dec_by(removed_count);
 
         // Remove expired passes from the on site list.
-        let removed_count =
-            remove_and_return_count(&mut self.on_site_list, |pass| pass.expiry_time > now_time);
-        metrics::waitingroom::on_site_count(SELF_NODE_ID).dec_by(removed_count);
+        let removed_count = retain_with_count(&mut self.local_on_site_list, |pass| {
+            pass.expiry_time > now_time
+        });
+        metrics::waitingroom::on_site_count(self.node_id).dec_by(removed_count);
 
         // TODO: Replace this with something in an operation queue.
         // This method should not be called inside another method.
         self.let_users_out_of_queue(removed_count as usize)?;
 
         // Remove expired tickets from the queue leaving list.
-        let removed_count = remove_and_return_count(&mut self.queue_leaving_list, |ticket| {
+        let removed_count = retain_with_count(&mut self.local_queue_leaving_list, |ticket| {
             ticket.expiry_time > now_time
         });
-        metrics::waitingroom::to_be_let_in_count(SELF_NODE_ID).dec_by(removed_count);
+        metrics::waitingroom::to_be_let_in_count(self.node_id).dec_by(removed_count);
 
         Ok(())
     }
@@ -259,17 +237,19 @@ impl WaitingRoomTimerTriggered for DistributedWaitingRoom {
     fn ensure_correct_user_count(&mut self) -> Result<(), WaitingRoomError> {
         // We use this user count, because people that are about to leave the queue
         // should be counted as users on site.
-        let user_count = self.on_site_list.len() + self.queue_leaving_list.len();
+        let user_count = self.local_on_site_list.len() + self.local_queue_leaving_list.len();
 
         // If there are too few users on site, let users out of the queue.
         if user_count < self.settings.min_user_count {
-            self.let_users_out_of_queue(self.settings.min_user_count - self.on_site_list.len())?;
+            self.let_users_out_of_queue(
+                self.settings.min_user_count - self.local_on_site_list.len(),
+            )?;
         }
         // If there are too many users on the site, add dummy users to the queue.
         if user_count > self.settings.max_user_count {
             // This should never happen
-            for _ in 0..(self.on_site_list.len() - self.settings.max_user_count) {
-                self.enqueue(Ticket::new_drain(SELF_NODE_ID));
+            for _ in 0..(self.local_on_site_list.len() - self.settings.max_user_count) {
+                self.enqueue(Ticket::new_drain(self.node_id));
             }
         }
 
@@ -281,11 +261,12 @@ impl WaitingRoomTimerTriggered for DistributedWaitingRoom {
 impl WaitingRoomMessageTriggered for DistributedWaitingRoom {}
 
 impl DistributedWaitingRoom {
-    pub fn new(settings: GeneralWaitingRoomSettings) -> Self {
+    pub fn new(settings: GeneralWaitingRoomSettings, node_id: NodeId) -> Self {
         Self {
             local_queue: LocalQueue::new(),
-            queue_leaving_list: Vec::new(),
-            on_site_list: Vec::new(),
+            local_queue_leaving_list: Vec::new(),
+            local_on_site_list: Vec::new(),
+            node_id,
             settings,
         }
     }
@@ -301,8 +282,8 @@ impl DistributedWaitingRoom {
             let ticket = tickets[idx];
             match ticket.ticket_type {
                 TicketType::Normal => {
-                    self.queue_leaving_list.push(ticket);
-                    metrics::waitingroom::to_be_let_in_count(SELF_NODE_ID).inc();
+                    self.local_queue_leaving_list.push(ticket);
+                    metrics::waitingroom::to_be_let_in_count(self.node_id).inc();
                 }
                 TicketType::Drain => {
                     // This ticket is a dummy ticket. We shouldn't do anything with it.
@@ -329,7 +310,7 @@ impl DistributedWaitingRoom {
     pub fn enqueue(&mut self, ticket: Ticket) {
         self.local_queue.enqueue(ticket);
         if ticket.ticket_type == TicketType::Normal {
-            metrics::waitingroom::in_queue_count(SELF_NODE_ID).inc();
+            metrics::waitingroom::in_queue_count(self.node_id).inc();
         }
     }
 
@@ -337,7 +318,7 @@ impl DistributedWaitingRoom {
     pub fn dequeue(&mut self) -> Option<Ticket> {
         let element = self.local_queue.dequeue();
         if element.is_some() && element.as_ref().unwrap().ticket_type == TicketType::Normal {
-            metrics::waitingroom::in_queue_count(SELF_NODE_ID).dec();
+            metrics::waitingroom::in_queue_count(self.node_id).dec();
         }
         element
     }
@@ -346,7 +327,7 @@ impl DistributedWaitingRoom {
     pub fn remove_from_queue(&mut self, ticket_identifier: TicketIdentifier) {
         if let Some(ticket) = self.local_queue.remove(ticket_identifier) {
             if ticket.ticket_type == TicketType::Normal {
-                metrics::waitingroom::in_queue_count(SELF_NODE_ID).dec();
+                metrics::waitingroom::in_queue_count(self.node_id).dec();
             }
         }
     }
