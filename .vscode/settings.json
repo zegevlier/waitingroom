@@ -1,7 +1,9 @@
 {
     "cSpell.words": [
         "checkin",
+        "crossterm",
         "QPID",
+        "ratatui",
         "waitingroom"
     ]
 }
