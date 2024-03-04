@@ -1,7 +1,7 @@
 use waitingroom_core::{
     metrics,
     pass::Pass,
-    settings,
+    retain_with_count, settings,
     ticket::{Ticket, TicketIdentifier, TicketType},
     NodeId, WaitingRoomError, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered,
     WaitingRoomUserTriggered,
@@ -22,25 +22,6 @@ pub struct BasicWaitingRoom {
     on_site_list: Vec<Pass>,
 
     settings: GeneralWaitingRoomSettings,
-}
-
-// TODO: Move this function elsewhere
-/// This function works like retain, except it counts the number of elements removed.
-/// There is probably a better solution for this.
-fn remove_and_return_count<T, F>(vec: &mut Vec<T>, condition: F) -> u64
-where
-    F: Fn(&T) -> bool,
-{
-    let mut removed_count = 0;
-    vec.retain(|v| {
-        if condition(v) {
-            true
-        } else {
-            removed_count += 1;
-            false
-        }
-    });
-    removed_count
 }
 
 impl WaitingRoomUserTriggered for BasicWaitingRoom {
@@ -173,14 +154,13 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
                     // Since we don't know whether the value is in the queue, and we cannot assume it is actually removed,
                     // we count the number of items removed from the list (either 0 or 1) and decrement the metric by that.
                     let removed_count =
-                        remove_and_return_count(&mut self.queue_leaving_list, |t| t != &ticket);
+                        retain_with_count(&mut self.queue_leaving_list, |t| t != &ticket);
                     metrics::waitingroom::to_be_let_in_count(SELF_NODE_ID).dec_by(removed_count);
                 }
             }
             waitingroom_core::Identification::Pass(pass) => {
-                let removed_count = remove_and_return_count(&mut self.on_site_list, |p| {
-                    p.identifier != pass.identifier
-                });
+                let removed_count =
+                    retain_with_count(&mut self.on_site_list, |p| p.identifier != pass.identifier);
                 metrics::waitingroom::on_site_count(SELF_NODE_ID).dec_by(removed_count);
             }
         }
@@ -234,7 +214,7 @@ impl WaitingRoomTimerTriggered for BasicWaitingRoom {
 
         // Remove expired passes from the on site list.
         let removed_count =
-            remove_and_return_count(&mut self.on_site_list, |pass| pass.expiry_time > now_time);
+            retain_with_count(&mut self.on_site_list, |pass| pass.expiry_time > now_time);
         metrics::waitingroom::on_site_count(SELF_NODE_ID).dec_by(removed_count);
 
         // TODO: Replace this with something in an operation queue.
@@ -242,7 +222,7 @@ impl WaitingRoomTimerTriggered for BasicWaitingRoom {
         self.let_users_out_of_queue(removed_count as usize)?;
 
         // Remove expired tickets from the queue leaving list.
-        let removed_count = remove_and_return_count(&mut self.queue_leaving_list, |ticket| {
+        let removed_count = retain_with_count(&mut self.queue_leaving_list, |ticket| {
             ticket.expiry_time > now_time
         });
         metrics::waitingroom::to_be_let_in_count(SELF_NODE_ID).dec_by(removed_count);
