@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{get_now_time, NodeId, Time};
+use crate::{time::TimeProvider, NodeId, Time};
 
 pub type TicketIdentifier = u64;
 
@@ -44,9 +44,17 @@ pub struct Ticket {
 }
 
 impl Ticket {
-    pub fn new(node_id: NodeId, ticket_refresh_time: Time, ticket_expiry_time: Time) -> Self {
+    pub fn new<T>(
+        node_id: NodeId,
+        ticket_refresh_time: Time,
+        ticket_expiry_time: Time,
+        time_provider: &T,
+    ) -> Self
+    where
+        T: TimeProvider,
+    {
         let identifier = rand::random();
-        let now_time = get_now_time();
+        let now_time = time_provider.get_now_time();
 
         Self {
             identifier,
@@ -102,13 +110,17 @@ impl Ticket {
 
     /// Refreshes the ticket. The ticket's position estimate is set to the given position
     /// estimate, and the ticket's refresh time and expiry time are updated.
-    pub fn refresh(
+    pub fn refresh<T>(
         &self,
         position_estimate: usize,
         ticket_refresh_time: Time,
         ticket_expiry_time: Time,
-    ) -> Self {
-        let now_time = get_now_time();
+        time_provider: &T,
+    ) -> Self
+    where
+        T: TimeProvider,
+    {
+        let now_time = time_provider.get_now_time();
 
         Self {
             identifier: self.identifier,
@@ -122,8 +134,11 @@ impl Ticket {
     }
 
     /// Returns true if the ticket is expired.
-    pub fn is_expired(&self) -> bool {
-        let now_time = get_now_time();
+    pub fn is_expired<T>(&self, time_provider: &T) -> bool
+    where
+        T: TimeProvider,
+    {
+        let now_time = time_provider.get_now_time();
 
         self.expiry_time < now_time
     }

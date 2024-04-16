@@ -16,6 +16,7 @@ use settings::HttpServerSettings;
 use waitingroom_basic::BasicWaitingRoom;
 use waitingroom_core::pass::Pass;
 use waitingroom_core::ticket::Ticket;
+use waitingroom_core::time::SystemTimeProvider;
 use waitingroom_core::WaitingRoomUserTriggered;
 
 use axum::{
@@ -37,7 +38,7 @@ type Client = hyper_util::client::legacy::Client<HttpConnector, Body>;
 
 #[derive(Clone)]
 struct AppState {
-    waitingroom: Arc<Mutex<BasicWaitingRoom>>,
+    waitingroom: Arc<Mutex<BasicWaitingRoom<SystemTimeProvider>>>,
     client: Client,
     key: Key,
     settings: HttpServerSettings,
@@ -293,7 +294,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     // The waiting room is in an Arc<Mutex<_>>, because it does not support any concurrency.
-    let waitingroom = Arc::new(Mutex::new(BasicWaitingRoom::new(cli.settings.waitingroom)));
+    let waitingroom = Arc::new(Mutex::new(BasicWaitingRoom::new(cli.settings.waitingroom, SystemTimeProvider::new())));
 
     let timers = timers::timers(waitingroom.clone(), &cli.settings.timer);
 

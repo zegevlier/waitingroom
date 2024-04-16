@@ -1,11 +1,22 @@
 use std::sync::Arc;
 
 use tokio::sync::mpsc::{Receiver, Sender};
-use waitingroom_core::{get_now_time, Time};
+use waitingroom_core::Time;
 
 use reqwest::cookie::Jar;
 
 const URL: &str = "http://127.0.0.1:8051";
+
+/// This utility function is used to get the current time in milliseconds since the UNIX epoch.
+/// This is used to set the join time, refresh time and expiry time of tickets and passes.
+/// This should not be used in the waiting rooms themselves, only in the surrounding functions.
+pub fn get_now_time() -> Time {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+}
+
 
 pub enum Task {
     /// Add a new user to the waiting room.
@@ -77,7 +88,7 @@ async fn refresh_users(users: &mut [User], tx: &Sender<UserStatusUpdate>) {
                             position: None,
                             next_refresh,
                         }
-                    },
+                    }
                     s if s.starts_with("TicketRefreshed(") => {
                         let position = s
                             .trim_start_matches("TicketRefreshed(")
@@ -94,7 +105,7 @@ async fn refresh_users(users: &mut [User], tx: &Sender<UserStatusUpdate>) {
                             position: Some(position),
                             next_refresh,
                         }
-                    },
+                    }
                     "NewPass" => {
                         let refresh_header = response.headers().get("refresh").unwrap();
                         let refresh = refresh_header.to_str().unwrap();
@@ -102,23 +113,19 @@ async fn refresh_users(users: &mut [User], tx: &Sender<UserStatusUpdate>) {
                         let next_refresh_in: Time = next_refresh.parse::<Time>().unwrap() * 1000;
                         let next_refresh = get_now_time() + next_refresh_in;
 
-                        Status::OnSite {
-                            next_refresh,
-                        }
-                    },
+                        Status::OnSite { next_refresh }
+                    }
 
                     "PassRefreshed" => {
                         let next_refresh = get_now_time() + 1000;
 
-                        Status::OnSite {
-                            next_refresh,
-                        }
-                    },
+                        Status::OnSite { next_refresh }
+                    }
                     _ => {
-                        // We recieved an unknown status.
+                        // We received an unknown status.
                         // Let's just remove the user.
                         Status::Removed
-                    },
+                    }
                 };
 
                 let user_status = UserStatusUpdate {

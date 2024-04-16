@@ -3,29 +3,39 @@ use waitingroom_core::{
     pass::Pass,
     retain_with_count, settings,
     ticket::{Ticket, TicketIdentifier, TicketType},
+    time::TimeProvider,
     NodeId, WaitingRoomError, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered,
     WaitingRoomUserTriggered,
 };
 use waitingroom_local_queue::LocalQueue;
 
-use settings::GeneralWaitingRoomSettings;
+pub use settings::GeneralWaitingRoomSettings;
 
 /// This is the waiting room implementation described in the associated paper.
-pub struct DistributedWaitingRoom {
+pub struct DistributedWaitingRoom<T>
+where
+    T: TimeProvider,
+{
     local_queue: LocalQueue,
     local_queue_leaving_list: Vec<Ticket>,
     local_on_site_list: Vec<Pass>,
 
     settings: GeneralWaitingRoomSettings,
     node_id: NodeId,
+
+    time_provider: T,
 }
 
-impl WaitingRoomUserTriggered for DistributedWaitingRoom {
+impl<T> WaitingRoomUserTriggered for DistributedWaitingRoom<T>
+where
+    T: TimeProvider,
+{
     fn join(&mut self) -> Result<waitingroom_core::ticket::Ticket, WaitingRoomError> {
         let ticket = waitingroom_core::ticket::Ticket::new(
             self.node_id,
             self.settings.ticket_refresh_time,
             self.settings.ticket_expiry_time,
+            &self.time_provider,
         );
         self.enqueue(ticket);
         Ok(ticket)
@@ -35,7 +45,7 @@ impl WaitingRoomUserTriggered for DistributedWaitingRoom {
         &mut self,
         ticket: waitingroom_core::ticket::Ticket,
     ) -> Result<waitingroom_core::CheckInResponse, WaitingRoomError> {
-        if ticket.is_expired() {
+        if ticket.is_expired(&self.time_provider) {
             // This happens when a user has not refreshed their ticket in time.
             return Err(WaitingRoomError::TicketExpired);
         }
@@ -91,6 +101,7 @@ impl WaitingRoomUserTriggered for DistributedWaitingRoom {
                     position_estimate,
                     self.settings.ticket_refresh_time,
                     self.settings.ticket_expiry_time,
+                    &self.time_provider,
                 );
                 ticket
             })
@@ -106,7 +117,7 @@ impl WaitingRoomUserTriggered for DistributedWaitingRoom {
         &mut self,
         ticket: waitingroom_core::ticket::Ticket,
     ) -> Result<waitingroom_core::pass::Pass, WaitingRoomError> {
-        if ticket.is_expired() {
+        if ticket.is_expired(&self.time_provider) {
             // This happens when a user has not refreshed their ticket in time.
             return Err(WaitingRoomError::TicketExpired);
         }
@@ -129,7 +140,7 @@ impl WaitingRoomUserTriggered for DistributedWaitingRoom {
         metrics::waitingroom::to_be_let_in_count(self.node_id).dec();
 
         // Generate a pass for the user.
-        let pass = Pass::from_ticket(ticket, self.settings.pass_expiry_time);
+        let pass = Pass::from_ticket(ticket, self.settings.pass_expiry_time, &self.time_provider);
 
         // And add the pass to the users on site list.
         self.local_on_site_list.push(pass);
@@ -188,7 +199,11 @@ impl WaitingRoomUserTriggered for DistributedWaitingRoom {
             .iter_mut()
             .find(|p| p.identifier == pass.identifier)
             .map(|pass| {
-                *pass = pass.refresh(self.node_id, self.settings.pass_expiry_time);
+                *pass = pass.refresh(
+                    self.node_id,
+                    self.settings.pass_expiry_time,
+                    &self.time_provider,
+                );
                 pass
             });
         match pass {
@@ -198,7 +213,10 @@ impl WaitingRoomUserTriggered for DistributedWaitingRoom {
     }
 }
 
-impl WaitingRoomTimerTriggered for DistributedWaitingRoom {
+impl<T> WaitingRoomTimerTriggered for DistributedWaitingRoom<T>
+where
+    T: TimeProvider,
+{
     fn cleanup(&mut self) -> Result<(), WaitingRoomError> {
         let now_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -258,15 +276,19 @@ impl WaitingRoomTimerTriggered for DistributedWaitingRoom {
 }
 
 // Since the basic waiting room only has a single node, these are all unreachable, since they should never be called.
-impl WaitingRoomMessageTriggered for DistributedWaitingRoom {}
+impl<T> WaitingRoomMessageTriggered for DistributedWaitingRoom<T> where T: TimeProvider {}
 
-impl DistributedWaitingRoom {
-    pub fn new(settings: GeneralWaitingRoomSettings, node_id: NodeId) -> Self {
+impl<T> DistributedWaitingRoom<T>
+where
+    T: TimeProvider,
+{
+    pub fn new(settings: GeneralWaitingRoomSettings, node_id: NodeId, time_provider: T) -> Self {
         Self {
             local_queue: LocalQueue::new(),
             local_queue_leaving_list: Vec::new(),
             local_on_site_list: Vec::new(),
             node_id,
+            time_provider,
             settings,
         }
     }

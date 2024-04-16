@@ -3,6 +3,7 @@ use waitingroom_core::{
     pass::Pass,
     retain_with_count, settings,
     ticket::{Ticket, TicketIdentifier, TicketType},
+    time::TimeProvider,
     NodeId, WaitingRoomError, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered,
     WaitingRoomUserTriggered,
 };
@@ -16,20 +17,29 @@ const SELF_NODE_ID: NodeId = 0;
 
 /// This is a very basic implementation of a waiting room.
 /// It only supports a single node. It's useful for testing.
-pub struct BasicWaitingRoom {
+pub struct BasicWaitingRoom<T>
+where
+    T: TimeProvider,
+{
     local_queue: LocalQueue,
     queue_leaving_list: Vec<Ticket>,
     on_site_list: Vec<Pass>,
 
     settings: GeneralWaitingRoomSettings,
+
+    time_provider: T,
 }
 
-impl WaitingRoomUserTriggered for BasicWaitingRoom {
+impl<T> WaitingRoomUserTriggered for BasicWaitingRoom<T>
+where
+    T: TimeProvider,
+{
     fn join(&mut self) -> Result<waitingroom_core::ticket::Ticket, WaitingRoomError> {
         let ticket = waitingroom_core::ticket::Ticket::new(
             SELF_NODE_ID,
             self.settings.ticket_refresh_time,
             self.settings.ticket_expiry_time,
+            &self.time_provider,
         );
         self.enqueue(ticket);
         Ok(ticket)
@@ -39,7 +49,7 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
         &mut self,
         ticket: waitingroom_core::ticket::Ticket,
     ) -> Result<waitingroom_core::CheckInResponse, WaitingRoomError> {
-        if ticket.is_expired() {
+        if ticket.is_expired(&self.time_provider) {
             // This happens when a user has not refreshed their ticket in time.
             return Err(WaitingRoomError::TicketExpired);
         }
@@ -95,6 +105,7 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
                     position_estimate,
                     self.settings.ticket_refresh_time,
                     self.settings.ticket_expiry_time,
+                    &self.time_provider,
                 );
                 ticket
             })
@@ -110,7 +121,7 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
         &mut self,
         ticket: waitingroom_core::ticket::Ticket,
     ) -> Result<waitingroom_core::pass::Pass, WaitingRoomError> {
-        if ticket.is_expired() {
+        if ticket.is_expired(&self.time_provider) {
             // This happens when a user has not refreshed their ticket in time.
             return Err(WaitingRoomError::TicketExpired);
         }
@@ -133,7 +144,7 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
         metrics::waitingroom::to_be_let_in_count(SELF_NODE_ID).dec();
 
         // Generate a pass for the user.
-        let pass = Pass::from_ticket(ticket, self.settings.pass_expiry_time);
+        let pass = Pass::from_ticket(ticket, self.settings.pass_expiry_time, &self.time_provider);
 
         // And add the pass to the users on site list.
         self.on_site_list.push(pass);
@@ -191,7 +202,11 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
             .iter_mut()
             .find(|p| p.identifier == pass.identifier)
             .map(|pass| {
-                *pass = pass.refresh(SELF_NODE_ID, self.settings.pass_expiry_time);
+                *pass = pass.refresh(
+                    SELF_NODE_ID,
+                    self.settings.pass_expiry_time,
+                    &self.time_provider,
+                );
                 pass
             });
         match pass {
@@ -201,7 +216,10 @@ impl WaitingRoomUserTriggered for BasicWaitingRoom {
     }
 }
 
-impl WaitingRoomTimerTriggered for BasicWaitingRoom {
+impl<T> WaitingRoomTimerTriggered for BasicWaitingRoom<T>
+where
+    T: TimeProvider,
+{
     fn cleanup(&mut self) -> Result<(), WaitingRoomError> {
         let now_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -258,14 +276,18 @@ impl WaitingRoomTimerTriggered for BasicWaitingRoom {
 }
 
 // Since the basic waiting room only has a single node, these are all unreachable, since they should never be called.
-impl WaitingRoomMessageTriggered for BasicWaitingRoom {}
+impl<T> WaitingRoomMessageTriggered for BasicWaitingRoom<T> where T: TimeProvider {}
 
-impl BasicWaitingRoom {
-    pub fn new(settings: GeneralWaitingRoomSettings) -> Self {
+impl<T> BasicWaitingRoom<T>
+where
+    T: TimeProvider,
+{
+    pub fn new(settings: GeneralWaitingRoomSettings, time_provider: T) -> Self {
         Self {
             local_queue: LocalQueue::new(),
             queue_leaving_list: Vec::new(),
             on_site_list: Vec::new(),
+            time_provider,
             settings,
         }
     }
