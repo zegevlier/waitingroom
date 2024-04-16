@@ -4,12 +4,13 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::time::{self, Duration};
 use waitingroom_basic::BasicWaitingRoom;
+use waitingroom_core::time::SystemTimeProvider;
 use waitingroom_core::WaitingRoomTimerTriggered;
 
 /// Run the waiting room operations that need to be triggered periodically.
 /// Barring panics, this function will never return.
 pub(crate) async fn timers(
-    waitingroom: Arc<Mutex<BasicWaitingRoom>>,
+    waitingroom: Arc<Mutex<BasicWaitingRoom<SystemTimeProvider>>>,
     waitingroom_settings: &WaitingRoomTimerSettings,
 ) {
     log::debug!("Setting up timers...");

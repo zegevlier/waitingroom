@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    get_now_time,
     ticket::{Ticket, TicketIdentifier},
+    time::TimeProvider,
     NodeId, Time,
 };
 
@@ -26,9 +26,11 @@ impl Pass {
     /// Creates a new pass from a ticket. The pass will expire after `pass_expiry_time` milliseconds.
     /// The pass is created at the current time, and the expiry time is calculated from that.
     /// The node id, identifier and queue join time are gotten from the ticket.
-    pub fn from_ticket(ticket: Ticket, pass_expiry_time: Time) -> Self {
-        // TODO(maybe): Add a function that takes the time to use as a parameter.
-        let now_time = get_now_time();
+    pub fn from_ticket<T>(ticket: Ticket, pass_expiry_time: Time, time_provider: &T) -> Self
+    where
+        T: TimeProvider,
+    {
+        let now_time = time_provider.get_now_time();
 
         Self {
             identifier: ticket.identifier,
@@ -41,8 +43,11 @@ impl Pass {
 
     /// Refreshes the pass, setting the expiry time to the current time, plus
     /// the `pass_expiry_time` and setting the node id to `node_id`.
-    pub fn refresh(&self, node_id: NodeId, pass_expiry_time: Time) -> Self {
-        let now_time = get_now_time();
+    pub fn refresh<T>(&self, node_id: NodeId, pass_expiry_time: Time, time_provider: &T) -> Self
+    where
+        T: TimeProvider,
+    {
+        let now_time = time_provider.get_now_time();
 
         Self {
             node_id,

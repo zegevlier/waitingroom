@@ -2824,6 +2824,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "waitingroom-playground"
+version = "0.1.0"
+dependencies = [
+ "waitingroom-core",
+ "waitingroom-distributed",
+]
+
+[[package]]
 name = "want"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

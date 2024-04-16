@@ -6,6 +6,7 @@ pub mod metrics;
 pub mod pass;
 pub mod settings;
 pub mod ticket;
+pub mod time;
 
 pub use error::WaitingRoomError;
 
@@ -84,16 +85,6 @@ pub trait WaitingRoomMessageTriggered {
 pub enum Identification {
     Ticket(Ticket),
     Pass(Pass),
-}
-
-/// This utility function is used to get the current time in milliseconds since the UNIX epoch.
-/// This is used to set the join time, refresh time and expiry time of tickets and passes.
-/// TODO: Replace this with a separate Time struct.
-pub fn get_now_time() -> Time {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis()
 }
 
 /// This utility function works like retain, except it counts the number of elements removed.
