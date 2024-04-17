@@ -183,10 +183,7 @@ where
         &mut self,
         pass: waitingroom_core::pass::Pass,
     ) -> Result<waitingroom_core::pass::Pass, WaitingRoomError> {
-        let now_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
+        let now_time = self.time_provider.get_now_time();
 
         if pass.expiry_time < now_time {
             return Err(WaitingRoomError::PassExpired);
@@ -221,10 +218,7 @@ where
     T: TimeProvider,
 {
     fn cleanup(&mut self) -> Result<(), WaitingRoomError> {
-        let now_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
+        let now_time = self.time_provider.get_now_time();
 
         // Remove expired tickets from the local queue.
         let removed_count = self.local_queue.remove_expired(now_time);

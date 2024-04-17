@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{time::TimeProvider, NodeId, Time};
+use crate::{
+    time::{Time, TimeProvider},
+    NodeId,
+};
 
 pub type TicketIdentifier = u64;
 

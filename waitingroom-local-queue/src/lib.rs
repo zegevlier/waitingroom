@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use waitingroom_core::{
     ticket::{Ticket, TicketIdentifier},
-    Time,
+    time::Time,
 };
 
 /// A queue of tickets. The ordering is based on the join time specified on the ticket.

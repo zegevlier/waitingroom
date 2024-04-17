@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ticket::{Ticket, TicketIdentifier},
-    time::TimeProvider,
-    NodeId, Time,
+    time::{Time, TimeProvider},
+    NodeId,
 };
 
 /// The user gets a pass when they leave the queue.

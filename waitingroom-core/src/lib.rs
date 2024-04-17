@@ -10,8 +10,6 @@ pub mod time;
 
 pub use error::WaitingRoomError;
 
-/// The type for time values. This is the number of milliseconds since the UNIX epoch.
-pub type Time = u128;
 /// The type for node identifiers. This is specified here to allow for easy changes in the future.
 pub type NodeId = u64;
 

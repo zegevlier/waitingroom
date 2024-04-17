@@ -230,7 +230,6 @@ async fn handler(
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_millis();
-
                 return Ok(make_response(
                     jar.add(cookie),
                     Some(
@@ -294,7 +293,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     // The waiting room is in an Arc<Mutex<_>>, because it does not support any concurrency.
-    let waitingroom = Arc::new(Mutex::new(BasicWaitingRoom::new(cli.settings.waitingroom, SystemTimeProvider::new())));
+    let waitingroom = Arc::new(Mutex::new(BasicWaitingRoom::new(
+        cli.settings.waitingroom,
+        SystemTimeProvider::new(),
+    )));
 
     let timers = timers::timers(waitingroom.clone(), &cli.settings.timer);
 
