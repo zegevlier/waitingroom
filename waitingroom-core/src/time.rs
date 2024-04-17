@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use crate::Time;
+/// The type for time values. This is the number of milliseconds since the UNIX epoch.
+pub type Time = u128;
 
 pub trait TimeProvider {
     /// This utility function is used to get the current time in milliseconds since the UNIX epoch.

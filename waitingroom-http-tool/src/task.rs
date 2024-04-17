@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use tokio::sync::mpsc::{Receiver, Sender};
-use waitingroom_core::Time;
+use waitingroom_core::time::Time;
 
 use reqwest::cookie::Jar;
 
