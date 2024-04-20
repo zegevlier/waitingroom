@@ -1,9 +1,13 @@
 // This module is for testing random things. Do not rely on it for anything.
 
-use waitingroom_core::{time::DummyTimeProvider, WaitingRoomUserTriggered};
-use waitingroom_distributed::{DistributedWaitingRoom, GeneralWaitingRoomSettings};
+use waitingroom_core::{network::DummyNetwork, time::DummyTimeProvider, WaitingRoomUserTriggered};
+use waitingroom_distributed::{
+    messages::NodeToNodeMessage, DistributedWaitingRoom, GeneralWaitingRoomSettings,
+};
 
 fn main() {
+    env_logger::init();
+    
     let settings = GeneralWaitingRoomSettings {
         min_user_count: 1,
         max_user_count: 1,
@@ -13,9 +17,20 @@ fn main() {
     };
 
     let dummy_time_provider = DummyTimeProvider::new();
+    let dummy_network: DummyNetwork<NodeToNodeMessage> = DummyNetwork::new();
 
-    let mut node1 = DistributedWaitingRoom::new(settings, 1, dummy_time_provider.clone());
-    let _ = DistributedWaitingRoom::new(settings, 1, dummy_time_provider.clone());
+    let mut node1 = DistributedWaitingRoom::new(
+        settings,
+        1,
+        dummy_time_provider.clone(),
+        dummy_network.clone(),
+    );
+    let mut node2 = DistributedWaitingRoom::new(
+        settings,
+        2,
+        dummy_time_provider.clone(),
+        dummy_network.clone(),
+    );
 
     let ticket = node1.join().unwrap();
     node1.let_users_out_of_queue(1).unwrap();

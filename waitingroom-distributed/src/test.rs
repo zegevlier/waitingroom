@@ -1,6 +1,6 @@
-use waitingroom_core::{settings::GeneralWaitingRoomSettings, time::DummyTimeProvider, WaitingRoomUserTriggered};
+use waitingroom_core::{network::DummyNetwork, settings::GeneralWaitingRoomSettings, time::DummyTimeProvider, WaitingRoomUserTriggered};
 
-use crate::DistributedWaitingRoom;
+use crate::{messages::NodeToNodeMessage, DistributedWaitingRoom};
 
 #[test]
 fn basic_test() {
@@ -13,8 +13,9 @@ fn basic_test() {
     };
 
     let dummy_time_provider = DummyTimeProvider::new();
+    let dummy_network: DummyNetwork<NodeToNodeMessage> = DummyNetwork::new();
 
-    let mut node = DistributedWaitingRoom::new(settings, 1, dummy_time_provider.clone());
+    let mut node = DistributedWaitingRoom::new(settings, 1, dummy_time_provider.clone(), dummy_network);
 
     let ticket = node.join().unwrap();
     node.let_users_out_of_queue(1).unwrap();

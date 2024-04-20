@@ -1,5 +1,7 @@
+use messages::NodeToNodeMessage;
 use waitingroom_core::{
     metrics,
+    network::{Network, NetworkHandle},
     pass::Pass,
     retain_with_count, settings,
     ticket::{Ticket, TicketIdentifier, TicketType},
@@ -14,10 +16,13 @@ pub use settings::GeneralWaitingRoomSettings;
 #[cfg(test)]
 mod test;
 
+pub mod messages;
+
 /// This is the waiting room implementation described in the associated paper.
-pub struct DistributedWaitingRoom<T>
+pub struct DistributedWaitingRoom<T, N>
 where
     T: TimeProvider,
+    N: Network<NodeToNodeMessage>,
 {
     local_queue: LocalQueue,
     local_queue_leaving_list: Vec<Ticket>,
@@ -26,14 +31,20 @@ where
     settings: GeneralWaitingRoomSettings,
     node_id: NodeId,
 
+    network_handle: N::NetworkHandle,
+
     time_provider: T,
 }
 
-impl<T> WaitingRoomUserTriggered for DistributedWaitingRoom<T>
+impl<T, N> WaitingRoomUserTriggered for DistributedWaitingRoom<T, N>
 where
     T: TimeProvider,
+    N: Network<NodeToNodeMessage>,
 {
     fn join(&mut self) -> Result<waitingroom_core::ticket::Ticket, WaitingRoomError> {
+        self.network_handle
+            .send_message(2, NodeToNodeMessage::Hello)
+            .unwrap();
         let ticket = waitingroom_core::ticket::Ticket::new(
             self.node_id,
             self.settings.ticket_refresh_time,
@@ -213,9 +224,10 @@ where
     }
 }
 
-impl<T> WaitingRoomTimerTriggered for DistributedWaitingRoom<T>
+impl<T, N> WaitingRoomTimerTriggered for DistributedWaitingRoom<T, N>
 where
     T: TimeProvider,
+    N: Network<NodeToNodeMessage>,
 {
     fn cleanup(&mut self) -> Result<(), WaitingRoomError> {
         let now_time = self.time_provider.get_now_time();
@@ -273,13 +285,31 @@ where
 }
 
 // Since the basic waiting room only has a single node, these are all unreachable, since they should never be called.
-impl<T> WaitingRoomMessageTriggered for DistributedWaitingRoom<T> where T: TimeProvider {}
-
-impl<T> DistributedWaitingRoom<T>
+impl<T, N> WaitingRoomMessageTriggered for DistributedWaitingRoom<T, N>
 where
     T: TimeProvider,
+    N: Network<NodeToNodeMessage>,
 {
-    pub fn new(settings: GeneralWaitingRoomSettings, node_id: NodeId, time_provider: T) -> Self {
+}
+
+impl<T, N> DistributedWaitingRoom<T, N>
+where
+    T: TimeProvider,
+    N: Network<NodeToNodeMessage>,
+{
+    pub fn new(
+        settings: GeneralWaitingRoomSettings,
+        node_id: NodeId,
+        time_provider: T,
+        network: N,
+    ) -> Self {
+        let network_handle = match network.join(node_id) {
+            Ok(handle) => handle,
+            Err(err) => {
+                panic!("Failed to join network: {:?}", err);
+            }
+        };
+
         Self {
             local_queue: LocalQueue::new(),
             local_queue_leaving_list: Vec::new(),
@@ -287,6 +317,7 @@ where
             node_id,
             time_provider,
             settings,
+            network_handle,
         }
     }
 

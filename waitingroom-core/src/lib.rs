@@ -3,6 +3,7 @@ use ticket::Ticket;
 
 mod error;
 pub mod metrics;
+pub mod network;
 pub mod pass;
 pub mod settings;
 pub mod ticket;
