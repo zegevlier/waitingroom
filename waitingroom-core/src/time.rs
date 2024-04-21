@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::Cell, rc::Rc};
 
 /// The type for time values. This is the number of milliseconds since the UNIX epoch.
 pub type Time = u128;
@@ -34,19 +34,18 @@ impl TimeProvider for SystemTimeProvider {
 
 #[derive(Clone)]
 pub struct DummyTimeProvider {
-    time: Rc<RefCell<Time>>,
+    time: Rc<Cell<Time>>,
 }
 
 impl DummyTimeProvider {
     pub fn new() -> Self {
         DummyTimeProvider {
-            time: Rc::new(RefCell::new(Time::default())),
+            time: Rc::new(Cell::new(Time::default())),
         }
     }
 
     pub fn increase_by(&self, amount: Time) {
-        let mut time = self.time.borrow_mut();
-        *time += amount;
+        self.time.set((*self.time).get() + amount);
     }
 }
 
@@ -58,6 +57,6 @@ impl Default for DummyTimeProvider {
 
 impl TimeProvider for DummyTimeProvider {
     fn get_now_time(&self) -> Time {
-        *self.time.borrow()
+        self.time.get()
     }
 }
