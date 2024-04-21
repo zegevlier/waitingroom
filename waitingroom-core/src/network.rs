@@ -48,6 +48,8 @@ pub struct DummyNetwork<M>
 where
     M: Clone,
 {
+    // Using `RefCell` here is not ideal, but it works for this use-case.
+    // It seems like the best option for now, and since this is only the mock it doesn't *really* matter.
     nodes: Rc<RefCell<Vec<NodeId>>>,
     messages: Rc<RefCell<Vec<Message<M>>>>,
 }
