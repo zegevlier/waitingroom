@@ -6,6 +6,7 @@ pub enum WaitingRoomError {
     TicketCannotLeaveYet,
     PassExpired,
     PassNotInList,
+    QPIDNotInitialized,
 }
 
 impl std::fmt::Display for WaitingRoomError {
@@ -17,6 +18,7 @@ impl std::fmt::Display for WaitingRoomError {
             WaitingRoomError::TicketCannotLeaveYet => write!(f, "Ticket cannot leave yet"),
             WaitingRoomError::PassExpired => write!(f, "Pass expired"),
             WaitingRoomError::PassNotInList => write!(f, "Pass not in list"),
+            WaitingRoomError::QPIDNotInitialized => write!(f, "QPID not initialized"),
         }
     }
 }

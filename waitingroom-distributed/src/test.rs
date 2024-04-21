@@ -18,7 +18,7 @@ fn basic_test() {
     let mut node = DistributedWaitingRoom::new(settings, 1, dummy_time_provider.clone(), dummy_network);
 
     let ticket = node.join().unwrap();
-    node.let_users_out_of_queue(1).unwrap();
+    node.qpid_delete_min().unwrap();
     let checkin_result = node.check_in(ticket).unwrap();
     assert!(checkin_result.position_estimate == 0);
     let pass = node.leave(ticket).unwrap();

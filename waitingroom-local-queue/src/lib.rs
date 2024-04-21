@@ -94,6 +94,11 @@ impl LocalQueue {
         });
         count
     }
+
+    /// Returns the ticket with the lowest join time in the queue without removing it.
+    pub fn peek(&self) -> Option<&Ticket> {
+        self.queue.iter().next().map(|(_, ticket)| ticket)
+    }
 }
 
 impl Default for LocalQueue {
