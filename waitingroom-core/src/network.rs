@@ -2,48 +2,29 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use log;
 
-use crate::NodeId;
+use crate::{error::NetworkError, NodeId};
 
 #[derive(Debug)]
-pub enum NetworkJoinError {
-    NodeAlreadyPresent,
-}
-
-#[derive(Debug)]
-pub enum NetworkError {
-    ConnectionError,
-}
-
-#[derive(Debug)]
-pub enum MessageSendError {
-    NodeNotFound,
-}
-
-#[derive(Debug)]
-pub enum ReceiveError {
-    ConnectionError,
-}
-
 pub struct Message<M> {
     pub from_node: NodeId,
     pub to_node: NodeId,
     pub message: M,
 }
 
-pub trait Network<M> {
+pub trait Network<M>: std::fmt::Debug {
     type NetworkHandle: NetworkHandle<M>;
 
-    fn join(&self, node: NodeId) -> Result<Self::NetworkHandle, NetworkJoinError>;
+    fn join(&self, node: NodeId) -> Result<Self::NetworkHandle, NetworkError>;
 
     fn all_nodes(&self) -> Result<Vec<NodeId>, NetworkError>;
 }
 
-pub trait NetworkHandle<M> {
-    fn send_message(&self, to_node: NodeId, message: M) -> Result<(), MessageSendError>;
-    fn receive_message(&self) -> Result<Option<Message<M>>, ReceiveError>;
+pub trait NetworkHandle<M>: Debug {
+    fn send_message(&self, to_node: NodeId, message: M) -> Result<(), NetworkError>;
+    fn receive_message(&self) -> Result<Option<Message<M>>, NetworkError>;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DummyNetwork<M>
 where
     M: Clone,
@@ -60,10 +41,10 @@ where
 {
     type NetworkHandle = DummyNetworkHandle<M>;
 
-    fn join(&self, node: NodeId) -> Result<Self::NetworkHandle, NetworkJoinError> {
+    fn join(&self, node: NodeId) -> Result<Self::NetworkHandle, NetworkError> {
         log::debug!("[NET] Node {} joined", node);
         if !self.add_node(node) {
-            return Err(NetworkJoinError::NodeAlreadyPresent);
+            return Err(NetworkError::NodeIDAlreadyUsed);
         }
         Ok(DummyNetworkHandle {
             node,
@@ -102,9 +83,9 @@ where
         from_node: NodeId,
         to_node: NodeId,
         message: M,
-    ) -> Result<(), MessageSendError> {
+    ) -> Result<(), NetworkError> {
         if !self.nodes.borrow().contains(&to_node) {
-            return Err(MessageSendError::NodeNotFound);
+            return Err(NetworkError::DestNodeNotFound);
         }
         self.messages.borrow_mut().push(Message {
             from_node,
@@ -114,7 +95,7 @@ where
         Ok(())
     }
 
-    fn receive_message(&self, node: NodeId) -> Result<Option<Message<M>>, ReceiveError> {
+    fn receive_message(&self, node: NodeId) -> Result<Option<Message<M>>, NetworkError> {
         let mut messages = self.messages.borrow_mut();
         let index = messages.iter().position(|m| m.to_node == node);
         if let Some(index) = index {
@@ -142,17 +123,28 @@ where
     network: DummyNetwork<M>,
 }
 
+impl<M: Debug> Debug for DummyNetworkHandle<M>
+where
+    M: Clone,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DummyNetworkHandle")
+            .field("node", &self.node)
+            .field("network", &"...")
+            .finish()
+    }
+}
+
 impl<M> NetworkHandle<M> for DummyNetworkHandle<M>
 where
     M: Debug + Clone,
 {
-    fn send_message(&self, to_node: NodeId, message: M) -> Result<(), MessageSendError> {
+    fn send_message(&self, to_node: NodeId, message: M) -> Result<(), NetworkError> {
         log::debug!("[NET] {} -> {}: {:?}", self.node, to_node, message);
         self.network.send_message(self.node, to_node, message)
     }
 
-    fn receive_message(&self) -> Result<Option<Message<M>>, ReceiveError> {
-        log::debug!("[NET] {} checking for messages", self.node);
+    fn receive_message(&self) -> Result<Option<Message<M>>, NetworkError> {
         self.network.receive_message(self.node)
     }
 }

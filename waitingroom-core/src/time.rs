@@ -1,14 +1,15 @@
-use std::{cell::Cell, rc::Rc};
+use std::{cell::Cell, fmt::Debug, rc::Rc};
 
 /// The type for time values. This is the number of milliseconds since the UNIX epoch.
 pub type Time = u128;
 
-pub trait TimeProvider {
+pub trait TimeProvider: Debug {
     /// This utility function is used to get the current time in milliseconds since the UNIX epoch.
     /// This is used to set the join time, refresh time and expiry time of tickets and passes.
     fn get_now_time(&self) -> Time;
 }
 
+#[derive(Debug)]
 pub struct SystemTimeProvider;
 
 impl SystemTimeProvider {
@@ -32,7 +33,7 @@ impl TimeProvider for SystemTimeProvider {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct DummyTimeProvider {
     time: Rc<Cell<Time>>,
 }
@@ -45,6 +46,7 @@ impl DummyTimeProvider {
     }
 
     pub fn increase_by(&self, amount: Time) {
+        log::debug!("Increasing dummy time by {}", amount);
         self.time.set((*self.time).get() + amount);
     }
 }

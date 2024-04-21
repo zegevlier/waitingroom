@@ -9,6 +9,7 @@ use waitingroom_core::{
 /// The queue is implemented as a BTreeMap. It has a linear time complexity for finding
 /// a ticket in the queue. This is not very efficient, but the local queue is not the
 /// bottleneck in the system.
+#[derive(Debug)]
 pub struct LocalQueue {
     queue: BTreeMap<(Time, TicketIdentifier), Ticket>,
 }

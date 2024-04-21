@@ -7,6 +7,7 @@ pub enum WaitingRoomError {
     PassExpired,
     PassNotInList,
     QPIDNotInitialized,
+    NetworkError(NetworkError),
 }
 
 impl std::fmt::Display for WaitingRoomError {
@@ -19,6 +20,19 @@ impl std::fmt::Display for WaitingRoomError {
             WaitingRoomError::PassExpired => write!(f, "Pass expired"),
             WaitingRoomError::PassNotInList => write!(f, "Pass not in list"),
             WaitingRoomError::QPIDNotInitialized => write!(f, "QPID not initialized"),
+            WaitingRoomError::NetworkError(err) => write!(f, "Network Error: {:?}", err),
         }
+    }
+}
+
+#[derive(Debug)]
+pub enum NetworkError {
+    NodeIDAlreadyUsed,
+    DestNodeNotFound,
+}
+
+impl From<NetworkError> for WaitingRoomError {
+    fn from(val: NetworkError) -> Self {
+        WaitingRoomError::NetworkError(val)
     }
 }

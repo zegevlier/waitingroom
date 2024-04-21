@@ -9,3 +9,4 @@ edition = "2021"
 waitingroom-distributed = { workspace = true }
 waitingroom-core = { workspace = true }
 env_logger = "0.11.3"
+log = "0.4.21"
