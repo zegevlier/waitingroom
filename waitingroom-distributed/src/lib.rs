@@ -291,6 +291,22 @@ where
     T: TimeProvider,
     N: Network<NodeToNodeMessage>,
 {
+    fn receive_message(&mut self) -> Result<bool, WaitingRoomError> {
+        if let Some(message) = self.network_handle.receive_message().unwrap() {
+            match message.message {
+                NodeToNodeMessage::QPIDUpdateMessage(weight) => {
+                    self.qpid_handle_update(message.from_node, weight)
+                }
+                NodeToNodeMessage::QPIDDeleteMin => self.qpid_delete_min(),
+                NodeToNodeMessage::QPIDFindRootMessage(weight) => {
+                    self.qpid_handle_find_root(message.from_node, weight)
+                }
+            }?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
 }
 
 impl<T, N> DistributedWaitingRoom<T, N>
@@ -316,13 +332,156 @@ where
             local_queue_leaving_list: Vec::new(),
             local_on_site_list: Vec::new(),
             qpid_current_weight: Time::MAX,
-            qpid_parent: Some(1), // TODO: This should be None before QPID is initialized.
+            qpid_parent: Some(2), // TODO: This should be None before QPID is initialized.
             qpid_weight_table: vec![(1, Time::MAX), (2, Time::MAX)], // TODO: This should be empty before QPID is initialized.
             node_id,
             time_provider,
             settings,
             network_handle,
         }
+    }
+
+    pub fn get_user_count(&self) -> usize {
+        self.local_queue.len()
+    }
+
+    /// Add a ticket to the local queue, incrementing the metric if the ticket type is normal.
+    pub fn enqueue(&mut self, ticket: Ticket) {
+        self.local_queue.enqueue(ticket);
+        if ticket.ticket_type == TicketType::Normal {
+            metrics::waitingroom::in_queue_count(self.node_id).inc();
+        }
+        if ticket.join_time < self.qpid_current_weight {
+            self.qpid_insert(ticket.join_time);
+        }
+    }
+
+    /// Remove the element at the front of the local queue, decrementing the metric if the ticket type is normal.
+    pub fn dequeue(&mut self) -> Option<Ticket> {
+        let element = self.local_queue.dequeue();
+        if element.is_some() && element.as_ref().unwrap().ticket_type == TicketType::Normal {
+            metrics::waitingroom::in_queue_count(self.node_id).dec();
+        }
+        element
+    }
+
+    fn qpid_insert(&mut self, weight: Time) {
+        // TODO QPID counter
+
+        self.qpid_current_weight = weight;
+        if let Some(qpid_parent) = self.qpid_parent {
+            if qpid_parent == self.node_id {
+                return;
+            }
+            let updated_weight = self.qpid_compute_weight(qpid_parent);
+            if updated_weight != self.qpid_get_from_weight_table(qpid_parent).unwrap() {
+                self.qpid_set_in_weight_table(qpid_parent, updated_weight);
+                self.network_handle
+                    .send_message(
+                        qpid_parent,
+                        NodeToNodeMessage::QPIDUpdateMessage(updated_weight),
+                    )
+                    .unwrap();
+            }
+        } else {
+            log::warn!("QPID parent is None when trying to insert");
+        }
+    }
+
+    fn qpid_handle_update(
+        &mut self,
+        from_node: NodeId,
+        weight: Time,
+    ) -> Result<(), WaitingRoomError> {
+        // TODO: QPID counter
+
+        self.qpid_set_in_weight_table(from_node, weight);
+        if self.qpid_parent == Some(self.node_id) {
+            if weight < self.qpid_current_weight {
+                self.qpid_parent = Some(from_node);
+                let updated_weight = self.qpid_compute_weight(from_node);
+                self.qpid_set_in_weight_table(from_node, updated_weight);
+                self.network_handle
+                    .send_message(
+                        from_node,
+                        NodeToNodeMessage::QPIDFindRootMessage(updated_weight),
+                    )
+                    .unwrap()
+            }
+        } else {
+            let updated_weight = self.qpid_compute_weight(self.qpid_parent.unwrap());
+            if updated_weight
+                != self
+                    .qpid_get_from_weight_table(self.qpid_parent.unwrap())
+                    .unwrap()
+            {
+                self.qpid_set_in_weight_table(self.qpid_parent.unwrap(), updated_weight);
+                self.network_handle
+                    .send_message(
+                        from_node,
+                        NodeToNodeMessage::QPIDUpdateMessage(updated_weight),
+                    )
+                    .unwrap()
+            }
+        }
+
+        Ok(())
+    }
+
+    fn qpid_handle_find_root(
+        &mut self,
+        from_node: NodeId,
+        weight: Time,
+    ) -> Result<(), WaitingRoomError> {
+        // TODO QPID Counter
+
+        self.qpid_set_in_weight_table(from_node, weight);
+        self.qpid_parent = Some(self.qpid_get_smallest_weight_node());
+        if self.qpid_parent.unwrap() != self.node_id {
+            let updated_weight = self.qpid_compute_weight(self.qpid_parent.unwrap());
+            self.qpid_set_in_weight_table(self.qpid_parent.unwrap(), updated_weight);
+            self.network_handle
+                .send_message(
+                    from_node,
+                    NodeToNodeMessage::QPIDUpdateMessage(updated_weight),
+                )
+                .unwrap()
+        }
+        Ok(())
+    }
+
+    fn qpid_get_from_weight_table(&self, node_id: NodeId) -> Option<Time> {
+        self.qpid_weight_table
+            .iter()
+            .find(|(id, _)| *id == node_id)
+            .map(|(_, weight)| *weight)
+    }
+
+    fn qpid_set_in_weight_table(&mut self, node_id: NodeId, value: Time) {
+        if let Some(v) = self
+            .qpid_weight_table
+            .iter_mut()
+            .find(|(id, _)| *id == node_id)
+        {
+            v.1 = value;
+        }
+    }
+
+    fn qpid_compute_weight(&self, node_id: NodeId) -> Time {
+        self.qpid_weight_table
+            .iter()
+            .filter(|(id, _)| *id != node_id)
+            .fold(self.qpid_current_weight, |min_weight, (_, weight)| {
+                min_weight.min(*weight)
+            })
+    }
+
+    fn qpid_get_smallest_weight_node(&self) -> NodeId {
+        self.qpid_weight_table
+            .iter()
+            .min_by_key(|(_, weight)| *weight)
+            .map(|(id, _)| *id)
+            .unwrap()
     }
 
     pub fn qpid_delete_min(&mut self) -> Result<(), WaitingRoomError> {
@@ -352,21 +511,15 @@ where
             }
         }
 
-        // Update QPID weight table
-        /*
-        if NOT QPIDWeightTable.allMax()
-			// If all the elements in the weight table are MAX,
-			// the queue is empty and we do not need to update
-			// the root.
-			QPIDParent <- QPIDWeightTable.getSmallestWeightNode()
-			if QPIDParent != selfnodeID
-				updatedWeight <- QPIDComputeWeight(selfnodeID, QPIDParent)
-				QPIDParent.send(QPIDFindRootMessage(selfnodeID, updatedWeight))
-                */
-        if self.qpid_weight_table.iter().any(|(_, weight)| *weight != Time::MAX) {
+        if self
+            .qpid_weight_table
+            .iter()
+            .any(|(_, weight)| *weight != Time::MAX)
+        {
             self.qpid_parent = Some(self.qpid_get_smallest_weight_node());
             if self.qpid_parent.unwrap() != self.node_id {
                 let updated_weight = self.qpid_compute_weight(self.qpid_parent.unwrap());
+                self.qpid_set_in_weight_table(self.qpid_parent.unwrap(), updated_weight);
                 self.network_handle
                     .send_message(
                         self.qpid_parent.unwrap(),
@@ -391,76 +544,6 @@ where
         }
 
         Ok(())
-    }
-
-    pub fn get_user_count(&self) -> usize {
-        self.local_queue.len()
-    }
-
-    /// Add a ticket to the local queue, incrementing the metric if the ticket type is normal.
-    pub fn enqueue(&mut self, ticket: Ticket) {
-        self.local_queue.enqueue(ticket);
-        if ticket.ticket_type == TicketType::Normal {
-            metrics::waitingroom::in_queue_count(self.node_id).inc();
-        }
-        if ticket.join_time < self.qpid_current_weight {
-            self.qpid_insert(ticket.join_time);
-        }
-    }
-
-    fn qpid_insert(&mut self, weight: Time) {
-        // TODO QPID counter
-
-        self.qpid_current_weight = weight;
-        if let Some(qpid_parent) = self.qpid_parent {
-            if qpid_parent == self.node_id {
-                return;
-            }
-            let updated_weight = self.qpid_compute_weight(qpid_parent);
-            if updated_weight != self.get_weight_table(qpid_parent).unwrap() {
-                self.network_handle
-                    .send_message(
-                        qpid_parent,
-                        NodeToNodeMessage::QPIDUpdateMessage(updated_weight),
-                    )
-                    .unwrap();
-            }
-        } else {
-            log::warn!("QPID parent is None when trying to insert");
-        }
-    }
-
-    fn get_weight_table(&self, node_id: NodeId) -> Option<Time> {
-        self.qpid_weight_table
-            .iter()
-            .find(|(id, _)| *id == node_id)
-            .map(|(_, weight)| *weight)
-    }
-
-    fn qpid_compute_weight(&self, node_id: NodeId) -> Time {
-        self.qpid_weight_table
-            .iter()
-            .filter(|(id, _)| *id != node_id)
-            .fold(self.qpid_current_weight, |min_weight, (_, weight)| {
-                min_weight.min(*weight)
-            })
-    }
-
-    fn qpid_get_smallest_weight_node(&self) -> NodeId {
-        self.qpid_weight_table
-            .iter()
-            .min_by_key(|(_, weight)| *weight)
-            .map(|(id, _)| *id)
-            .unwrap()
-    }
-
-    /// Remove the element at the front of the local queue, decrementing the metric if the ticket type is normal.
-    pub fn dequeue(&mut self) -> Option<Ticket> {
-        let element = self.local_queue.dequeue();
-        if element.is_some() && element.as_ref().unwrap().ticket_type == TicketType::Normal {
-            metrics::waitingroom::in_queue_count(self.node_id).dec();
-        }
-        element
     }
 
     /// Remove a specific element from the local queue by identifier, decrementing the metric if the ticket type is normal.
