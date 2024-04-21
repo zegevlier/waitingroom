@@ -1,0 +1,147 @@
+   Compiling waitingroom-playground v0.1.0 (/home/zegevlier/waitingroom/waitingroom-playground)
+warning: unused variable: `ticket2`
+  --> waitingroom-playground/src/main.rs:51:9
+   |
+51 |     let ticket2 = nodes[1].join().unwrap();
+   |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_ticket2`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: `waitingroom-playground` (bin "waitingroom-playground") generated 1 warning (run `cargo fix --bin "waitingroom-playground"` to apply 1 suggestion)
+    Finished dev [unoptimized + debuginfo] target(s) in 2.37s
+     Running `/home/zegevlier/waitingroom/target/debug/waitingroom-playground`
+[2024-04-21T21:30:55Z INFO  waitingroom_playground] Instantiating dummy time and network
+[2024-04-21T21:30:55Z INFO  waitingroom_playground] Creating 2 waitingroom nodes
+[2024-04-21T21:30:55Z DEBUG waitingroom_core::network] [NET] Node 0 joined
+[2024-04-21T21:30:55Z DEBUG waitingroom_core::network] [NET] Node 1 joined
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 0] join
+[2024-04-21T21:30:55Z DEBUG waitingroom_core::network] [NET] 0 -> 1: QPIDUpdateMessage(0)
+[2024-04-21T21:30:55Z DEBUG waitingroom_playground] Processing messages
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 1] handle update
+[2024-04-21T21:30:55Z DEBUG waitingroom_core::network] [NET] 1 -> 0: QPIDFindRootMessage(340282366920938463463374607431768211455)
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 0] handle find root
+[waitingroom-distributed/src/lib.rs:461:9] &self = DistributedWaitingRoom {
+    local_queue: LocalQueue {
+        queue: {
+            (
+                0,
+                1778406820498343176,
+            ): Ticket {
+                ticket_type: Normal,
+                identifier: 1778406820498343176,
+                join_time: 0,
+                next_refresh_time: 6000,
+                expiry_time: 15000,
+                node_id: 0,
+                previous_position_estimate: 18446744073709551615,
+            },
+        },
+    },
+    local_queue_leaving_list: [],
+    local_on_site_list: [],
+    settings: GeneralWaitingRoomSettings {
+        min_user_count: 1,
+        max_user_count: 1,
+        ticket_refresh_time: 6000,
+        ticket_expiry_time: 15000,
+        pass_expiry_time: 6000,
+    },
+    node_id: 0,
+    network_handle: DummyNetworkHandle {
+        node: 0,
+        network: "...",
+    },
+    time_provider: DummyTimeProvider {
+        time: Cell {
+            value: 0,
+        },
+    },
+    qpid_parent: Some(
+        0,
+    ),
+    qpid_weight_table: [
+        (
+            0,
+            0,
+        ),
+        (
+            1,
+            340282366920938463463374607431768211455,
+        ),
+    ],
+}
+[2024-04-21T21:30:55Z DEBUG waitingroom_core::network] [NET] 0 -> 1: QPIDUpdateMessage(0)
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 1] handle update
+[2024-04-21T21:30:55Z DEBUG waitingroom_core::network] [NET] 1 -> 0: QPIDUpdateMessage(340282366920938463463374607431768211455)
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 0] handle update
+[2024-04-21T21:30:55Z DEBUG waitingroom_core::time] Increasing dummy time by 10
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 1] join
+[2024-04-21T21:30:55Z DEBUG waitingroom_core::network] [NET] 1 -> 0: QPIDUpdateMessage(10)
+[2024-04-21T21:30:55Z DEBUG waitingroom_playground] Processing messages
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 0] handle update
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 1] QPID delete min
+[2024-04-21T21:30:55Z DEBUG waitingroom_core::network] [NET] 1 -> 0: QPIDDeleteMin
+[2024-04-21T21:30:55Z DEBUG waitingroom_playground] Processing messages
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 0] QPID delete min
+[2024-04-21T21:30:55Z DEBUG waitingroom_core::network] [NET] 0 -> 1: QPIDFindRootMessage(340282366920938463463374607431768211455)
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 1] handle find root
+[waitingroom-distributed/src/lib.rs:461:9] &self = DistributedWaitingRoom {
+    local_queue: LocalQueue {
+        queue: {
+            (
+                10,
+                14334582270807136974,
+            ): Ticket {
+                ticket_type: Normal,
+                identifier: 14334582270807136974,
+                join_time: 10,
+                next_refresh_time: 6010,
+                expiry_time: 15010,
+                node_id: 1,
+                previous_position_estimate: 18446744073709551615,
+            },
+        },
+    },
+    local_queue_leaving_list: [],
+    local_on_site_list: [],
+    settings: GeneralWaitingRoomSettings {
+        min_user_count: 1,
+        max_user_count: 1,
+        ticket_refresh_time: 6000,
+        ticket_expiry_time: 15000,
+        pass_expiry_time: 6000,
+    },
+    node_id: 1,
+    network_handle: DummyNetworkHandle {
+        node: 1,
+        network: "...",
+    },
+    time_provider: DummyTimeProvider {
+        time: Cell {
+            value: 10,
+        },
+    },
+    qpid_parent: Some(
+        1,
+    ),
+    qpid_weight_table: [
+        (
+            0,
+            340282366920938463463374607431768211455,
+        ),
+        (
+            1,
+            10,
+        ),
+    ],
+}
+[2024-04-21T21:30:55Z DEBUG waitingroom_core::network] [NET] 1 -> 0: QPIDUpdateMessage(10)
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 0] handle update
+[2024-04-21T21:30:55Z DEBUG waitingroom_core::network] [NET] 0 -> 1: QPIDUpdateMessage(340282366920938463463374607431768211455)
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 1] handle update
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 0] check in 1778406820498343176
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 0] leave 1778406820498343176
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 0] pass refresh 1778406820498343176
+[2024-04-21T21:30:55Z DEBUG waitingroom_core::time] Increasing dummy time by 6001
+[2024-04-21T21:30:55Z INFO  waitingroom_distributed] [NODE 0] pass refresh 1778406820498343176
+[2024-04-21T21:30:55Z INFO  waitingroom_playground] Done

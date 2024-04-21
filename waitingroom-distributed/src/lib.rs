@@ -19,6 +19,7 @@ mod test;
 pub mod messages;
 
 /// This is the waiting room implementation described in the associated paper.
+#[derive(Debug)]
 pub struct DistributedWaitingRoom<T, N>
 where
     T: TimeProvider,
@@ -36,7 +37,6 @@ where
     time_provider: T,
 
     qpid_parent: Option<NodeId>,
-    qpid_current_weight: Time,
     qpid_weight_table: Vec<(NodeId, Time)>,
 }
 
@@ -46,6 +46,7 @@ where
     N: Network<NodeToNodeMessage>,
 {
     fn join(&mut self) -> Result<waitingroom_core::ticket::Ticket, WaitingRoomError> {
+        log::info!("[NODE {}] join", self.node_id);
         let ticket = waitingroom_core::ticket::Ticket::new(
             self.node_id,
             self.settings.ticket_refresh_time,
@@ -60,6 +61,7 @@ where
         &mut self,
         ticket: waitingroom_core::ticket::Ticket,
     ) -> Result<waitingroom_core::CheckInResponse, WaitingRoomError> {
+        log::info!("[NODE {}] check in {}", self.node_id, ticket.identifier);
         if ticket.is_expired(&self.time_provider) {
             // This happens when a user has not refreshed their ticket in time.
             return Err(WaitingRoomError::TicketExpired);
@@ -132,6 +134,7 @@ where
         &mut self,
         ticket: waitingroom_core::ticket::Ticket,
     ) -> Result<waitingroom_core::pass::Pass, WaitingRoomError> {
+        log::info!("[NODE {}] leave {}", self.node_id, ticket.identifier);
         if ticket.is_expired(&self.time_provider) {
             // This happens when a user has not refreshed their ticket in time.
             return Err(WaitingRoomError::TicketExpired);
@@ -168,6 +171,7 @@ where
         &mut self,
         identification: waitingroom_core::Identification,
     ) -> Result<(), WaitingRoomError> {
+        log::info!("[NODE {}] disconnect", self.node_id);
         match identification {
             waitingroom_core::Identification::Ticket(ticket) => {
                 if self.local_queue.contains(ticket.identifier) {
@@ -195,6 +199,7 @@ where
         &mut self,
         pass: waitingroom_core::pass::Pass,
     ) -> Result<waitingroom_core::pass::Pass, WaitingRoomError> {
+        log::info!("[NODE {}] pass refresh {}", self.node_id, pass.identifier);
         let now_time = self.time_provider.get_now_time();
 
         if pass.expiry_time < now_time {
@@ -231,6 +236,7 @@ where
     N: Network<NodeToNodeMessage>,
 {
     fn cleanup(&mut self) -> Result<(), WaitingRoomError> {
+        log::info!("[NODE {}] cleanup", self.node_id);
         let now_time = self.time_provider.get_now_time();
 
         // Remove expired tickets from the local queue.
@@ -257,12 +263,14 @@ where
     }
 
     fn sync_user_counts(&mut self) -> Result<(), WaitingRoomError> {
+        log::info!("[NODE {}] sync user counts", self.node_id);
         // This is a no-op, since there is only a single node.
         // Nothing needs to be synced.
         Ok(())
     }
 
     fn ensure_correct_user_count(&mut self) -> Result<(), WaitingRoomError> {
+        log::info!("[NODE {}] ensure correct user count", self.node_id);
         // We use this user count, because people that are about to leave the queue
         // should be counted as users on site.
         let user_count = self.local_on_site_list.len() + self.local_queue_leaving_list.len();
@@ -292,7 +300,7 @@ where
     N: Network<NodeToNodeMessage>,
 {
     fn receive_message(&mut self) -> Result<bool, WaitingRoomError> {
-        if let Some(message) = self.network_handle.receive_message().unwrap() {
+        if let Some(message) = self.network_handle.receive_message()? {
             match message.message {
                 NodeToNodeMessage::QPIDUpdateMessage(weight) => {
                     self.qpid_handle_update(message.from_node, weight)
@@ -331,14 +339,22 @@ where
             local_queue: LocalQueue::new(),
             local_queue_leaving_list: Vec::new(),
             local_on_site_list: Vec::new(),
-            qpid_current_weight: Time::MAX,
-            qpid_parent: Some(2), // TODO: This should be None before QPID is initialized.
-            qpid_weight_table: vec![(1, Time::MAX), (2, Time::MAX)], // TODO: This should be empty before QPID is initialized.
+            qpid_parent: None,
+            qpid_weight_table: vec![],
             node_id,
             time_provider,
             settings,
             network_handle,
         }
+    }
+
+    pub fn testing_overwrite_qpid(
+        &mut self,
+        parent: Option<NodeId>,
+        weight_table: Vec<(NodeId, Time)>,
+    ) {
+        self.qpid_parent = parent;
+        self.qpid_weight_table = weight_table;
     }
 
     pub fn get_user_count(&self) -> usize {
@@ -351,7 +367,7 @@ where
         if ticket.ticket_type == TicketType::Normal {
             metrics::waitingroom::in_queue_count(self.node_id).inc();
         }
-        if ticket.join_time < self.qpid_current_weight {
+        if ticket.join_time < self.qpid_get_from_weight_table(self.node_id) {
             self.qpid_insert(ticket.join_time);
         }
     }
@@ -368,13 +384,13 @@ where
     fn qpid_insert(&mut self, weight: Time) {
         // TODO QPID counter
 
-        self.qpid_current_weight = weight;
+        self.qpid_set_in_weight_table(self.node_id, weight);
         if let Some(qpid_parent) = self.qpid_parent {
             if qpid_parent == self.node_id {
                 return;
             }
             let updated_weight = self.qpid_compute_weight(qpid_parent);
-            if updated_weight != self.qpid_get_from_weight_table(qpid_parent).unwrap() {
+            if updated_weight != self.qpid_get_from_weight_table(qpid_parent) {
                 self.qpid_set_in_weight_table(qpid_parent, updated_weight);
                 self.network_handle
                     .send_message(
@@ -393,11 +409,16 @@ where
         from_node: NodeId,
         weight: Time,
     ) -> Result<(), WaitingRoomError> {
+        log::info!("[NODE {}] handle update", self.node_id);
         // TODO: QPID counter
+        if self.qpid_parent.is_none() {
+            return Err(WaitingRoomError::QPIDNotInitialized);
+        }
+        let qpid_parent = self.qpid_parent.unwrap();
 
         self.qpid_set_in_weight_table(from_node, weight);
         if self.qpid_parent == Some(self.node_id) {
-            if weight < self.qpid_current_weight {
+            if weight < self.qpid_get_from_weight_table(self.node_id) {
                 self.qpid_parent = Some(from_node);
                 let updated_weight = self.qpid_compute_weight(from_node);
                 self.qpid_set_in_weight_table(from_node, updated_weight);
@@ -409,16 +430,12 @@ where
                     .unwrap()
             }
         } else {
-            let updated_weight = self.qpid_compute_weight(self.qpid_parent.unwrap());
-            if updated_weight
-                != self
-                    .qpid_get_from_weight_table(self.qpid_parent.unwrap())
-                    .unwrap()
-            {
-                self.qpid_set_in_weight_table(self.qpid_parent.unwrap(), updated_weight);
+            let updated_weight = self.qpid_compute_weight(qpid_parent);
+            if updated_weight != self.qpid_get_from_weight_table(qpid_parent) {
+                self.qpid_set_in_weight_table(qpid_parent, updated_weight);
                 self.network_handle
                     .send_message(
-                        from_node,
+                        qpid_parent,
                         NodeToNodeMessage::QPIDUpdateMessage(updated_weight),
                     )
                     .unwrap()
@@ -433,13 +450,17 @@ where
         from_node: NodeId,
         weight: Time,
     ) -> Result<(), WaitingRoomError> {
+        log::info!("[NODE {}] handle find root", self.node_id);
         // TODO QPID Counter
-
+        if self.qpid_parent.is_none() {
+            return Err(WaitingRoomError::QPIDNotInitialized);
+        }
+        let qpid_parent = self.qpid_parent.unwrap();
         self.qpid_set_in_weight_table(from_node, weight);
         self.qpid_parent = Some(self.qpid_get_smallest_weight_node());
-        if self.qpid_parent.unwrap() != self.node_id {
-            let updated_weight = self.qpid_compute_weight(self.qpid_parent.unwrap());
-            self.qpid_set_in_weight_table(self.qpid_parent.unwrap(), updated_weight);
+        if qpid_parent != self.node_id {
+            let updated_weight = self.qpid_compute_weight(qpid_parent);
+            self.qpid_set_in_weight_table(qpid_parent, updated_weight);
             self.network_handle
                 .send_message(
                     from_node,
@@ -450,11 +471,12 @@ where
         Ok(())
     }
 
-    fn qpid_get_from_weight_table(&self, node_id: NodeId) -> Option<Time> {
+    fn qpid_get_from_weight_table(&self, node_id: NodeId) -> Time {
         self.qpid_weight_table
             .iter()
             .find(|(id, _)| *id == node_id)
             .map(|(_, weight)| *weight)
+            .unwrap()
     }
 
     fn qpid_set_in_weight_table(&mut self, node_id: NodeId, value: Time) {
@@ -471,7 +493,7 @@ where
         self.qpid_weight_table
             .iter()
             .filter(|(id, _)| *id != node_id)
-            .fold(self.qpid_current_weight, |min_weight, (_, weight)| {
+            .fold(Time::MAX, |min_weight, (_, weight)| {
                 min_weight.min(*weight)
             })
     }
@@ -485,14 +507,17 @@ where
     }
 
     pub fn qpid_delete_min(&mut self) -> Result<(), WaitingRoomError> {
+        log::info!("[NODE {}] QPID delete min", self.node_id);
         if self.qpid_parent.is_none() {
             return Err(WaitingRoomError::QPIDNotInitialized);
         }
         let qpid_parent = self.qpid_parent.unwrap();
+
         if qpid_parent != self.node_id {
             self.network_handle
                 .send_message(qpid_parent, NodeToNodeMessage::QPIDDeleteMin)
                 .unwrap();
+            return Ok(());
         }
 
         if self.local_queue.is_empty() {
@@ -504,10 +529,10 @@ where
         // Update current QPID weight
         match self.local_queue.peek() {
             Some(next_ticket) => {
-                self.qpid_current_weight = next_ticket.join_time;
+                self.qpid_set_in_weight_table(self.node_id, next_ticket.join_time);
             }
             None => {
-                self.qpid_current_weight = Time::MAX;
+                self.qpid_set_in_weight_table(self.node_id, Time::MAX);
             }
         }
 
@@ -516,13 +541,14 @@ where
             .iter()
             .any(|(_, weight)| *weight != Time::MAX)
         {
-            self.qpid_parent = Some(self.qpid_get_smallest_weight_node());
-            if self.qpid_parent.unwrap() != self.node_id {
-                let updated_weight = self.qpid_compute_weight(self.qpid_parent.unwrap());
-                self.qpid_set_in_weight_table(self.qpid_parent.unwrap(), updated_weight);
+            let new_parent = self.qpid_get_smallest_weight_node();
+            self.qpid_parent = Some(new_parent);
+            if new_parent != self.node_id {
+                let updated_weight = self.qpid_compute_weight(new_parent);
+                self.qpid_set_in_weight_table(new_parent, updated_weight);
                 self.network_handle
                     .send_message(
-                        self.qpid_parent.unwrap(),
+                        new_parent,
                         NodeToNodeMessage::QPIDFindRootMessage(updated_weight),
                     )
                     .unwrap();
