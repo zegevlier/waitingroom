@@ -45,18 +45,15 @@ fn main() {
     nodes[1].qpid_delete_min().unwrap();
     process_messages(&mut nodes);
     let checkin_result = nodes[0].check_in(ticket).unwrap();
-    process_messages(&mut nodes);
 
     assert!(checkin_result.position_estimate == 0);
     let pass = nodes[0].leave(ticket).unwrap();
-    process_messages(&mut nodes);
 
     let pass = if let Ok(new_pass) = nodes[0].validate_and_refresh_pass(pass) {
         new_pass
     } else {
         panic!("Invalid pass!");
     };
-    process_messages(&mut nodes);
 
     dummy_time_provider.increase_by(6001);
     if nodes[0].validate_and_refresh_pass(pass).is_ok() {
