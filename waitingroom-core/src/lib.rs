@@ -76,8 +76,12 @@ pub trait WaitingRoomTimerTriggered {
 /// These functions are only implemented for waiting rooms that support
 /// multi-node operation.
 pub trait WaitingRoomMessageTriggered {
-    // TODO(soon): Add messages. This is not yet done, because the basic
-    //             waiting room does not support multi-node operation.
+    /// Receive and process a single message from the network.
+    fn receive_message(&mut self) -> Result<bool, WaitingRoomError> {
+        unimplemented!(
+            "This waiting room was not expecting to receive any messages, but got one anyway."
+        )
+    }
 }
 
 /// In cases where both a ticket and pass are supported, this enum is used to specify which one is.
