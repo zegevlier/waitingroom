@@ -2811,6 +2811,7 @@ dependencies = [
 name = "waitingroom-distributed"
 version = "0.1.0"
 dependencies = [
+ "log",
  "waitingroom-core",
  "waitingroom-local-queue",
 ]

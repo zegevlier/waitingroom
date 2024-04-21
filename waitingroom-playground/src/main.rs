@@ -7,7 +7,7 @@ use waitingroom_distributed::{
 
 fn main() {
     env_logger::init();
-    
+
     let settings = GeneralWaitingRoomSettings {
         min_user_count: 1,
         max_user_count: 1,
@@ -25,6 +25,7 @@ fn main() {
         dummy_time_provider.clone(),
         dummy_network.clone(),
     );
+
     let mut node2 = DistributedWaitingRoom::new(
         settings,
         2,
@@ -33,7 +34,7 @@ fn main() {
     );
 
     let ticket = node1.join().unwrap();
-    node1.let_users_out_of_queue(1).unwrap();
+    node1.qpid_delete_min().unwrap();
     let checkin_result = node1.check_in(ticket).unwrap();
     assert!(checkin_result.position_estimate == 0);
     let pass = node1.leave(ticket).unwrap();

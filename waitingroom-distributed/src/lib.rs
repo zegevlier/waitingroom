@@ -5,7 +5,7 @@ use waitingroom_core::{
     pass::Pass,
     retain_with_count, settings,
     ticket::{Ticket, TicketIdentifier, TicketType},
-    time::TimeProvider,
+    time::{Time, TimeProvider},
     NodeId, WaitingRoomError, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered,
     WaitingRoomUserTriggered,
 };
@@ -34,6 +34,10 @@ where
     network_handle: N::NetworkHandle,
 
     time_provider: T,
+
+    qpid_parent: Option<NodeId>,
+    qpid_current_weight: Time,
+    qpid_weight_table: Vec<(NodeId, Time)>,
 }
 
 impl<T, N> WaitingRoomUserTriggered for DistributedWaitingRoom<T, N>
@@ -42,9 +46,6 @@ where
     N: Network<NodeToNodeMessage>,
 {
     fn join(&mut self) -> Result<waitingroom_core::ticket::Ticket, WaitingRoomError> {
-        self.network_handle
-            .send_message(2, NodeToNodeMessage::Hello)
-            .unwrap();
         let ticket = waitingroom_core::ticket::Ticket::new(
             self.node_id,
             self.settings.ticket_refresh_time,
@@ -242,9 +243,9 @@ where
         });
         metrics::waitingroom::on_site_count(self.node_id).dec_by(removed_count);
 
-        // TODO: Replace this with something in an operation queue.
+        // TODO: Replace this with the correct method when QPID is implemented.
         // This method should not be called inside another method.
-        self.let_users_out_of_queue(removed_count as usize)?;
+        // self.let_users_out_of_queue(removed_count as usize)?;
 
         // Remove expired tickets from the queue leaving list.
         let removed_count = retain_with_count(&mut self.local_queue_leaving_list, |ticket| {
@@ -268,9 +269,9 @@ where
 
         // If there are too few users on site, let users out of the queue.
         if user_count < self.settings.min_user_count {
-            self.let_users_out_of_queue(
-                self.settings.min_user_count - self.local_on_site_list.len(),
-            )?;
+            for _ in 0..(self.settings.min_user_count - self.local_on_site_list.len()) {
+                self.qpid_delete_min()?;
+            }
         }
         // If there are too many users on the site, add dummy users to the queue.
         if user_count > self.settings.max_user_count {
@@ -314,6 +315,9 @@ where
             local_queue: LocalQueue::new(),
             local_queue_leaving_list: Vec::new(),
             local_on_site_list: Vec::new(),
+            qpid_current_weight: Time::MAX,
+            qpid_parent: Some(1), // TODO: This should be None before QPID is initialized.
+            qpid_weight_table: vec![(1, Time::MAX), (2, Time::MAX)], // TODO: This should be empty before QPID is initialized.
             node_id,
             time_provider,
             settings,
@@ -321,32 +325,69 @@ where
         }
     }
 
-    pub fn let_users_out_of_queue(&mut self, count: usize) -> Result<(), WaitingRoomError> {
-        // Get the first `count` tickets from the local queue.
-        let mut tickets = (0..count)
-            .filter_map(|_| self.dequeue())
-            .collect::<Vec<_>>();
+    pub fn qpid_delete_min(&mut self) -> Result<(), WaitingRoomError> {
+        if self.qpid_parent.is_none() {
+            return Err(WaitingRoomError::QPIDNotInitialized);
+        }
+        let qpid_parent = self.qpid_parent.unwrap();
+        if qpid_parent != self.node_id {
+            self.network_handle
+                .send_message(qpid_parent, NodeToNodeMessage::QPIDDeleteMin)
+                .unwrap();
+        }
 
-        let mut idx = 0;
-        while idx < tickets.len() {
-            let ticket = tickets[idx];
-            match ticket.ticket_type {
-                TicketType::Normal => {
-                    self.local_queue_leaving_list.push(ticket);
-                    metrics::waitingroom::to_be_let_in_count(self.node_id).inc();
-                }
-                TicketType::Drain => {
-                    // This ticket is a dummy ticket. We shouldn't do anything with it.
-                }
-                TicketType::Skip => {
-                    // For this ticket, we need to take someone else out of the queue.
-                    if let Some(ticket) = self.dequeue() {
-                        tickets.push(ticket);
-                    }
-                }
+        if self.local_queue.is_empty() {
+            return Ok(());
+        }
+
+        let ticket = self.dequeue().unwrap();
+
+        // Update current QPID weight
+        match self.local_queue.peek() {
+            Some(next_ticket) => {
+                self.qpid_current_weight = next_ticket.join_time;
             }
+            None => {
+                self.qpid_current_weight = Time::MAX;
+            }
+        }
 
-            idx += 1;
+        // Update QPID weight table
+        /*
+        if NOT QPIDWeightTable.allMax()
+			// If all the elements in the weight table are MAX,
+			// the queue is empty and we do not need to update
+			// the root.
+			QPIDParent <- QPIDWeightTable.getSmallestWeightNode()
+			if QPIDParent != selfnodeID
+				updatedWeight <- QPIDComputeWeight(selfnodeID, QPIDParent)
+				QPIDParent.send(QPIDFindRootMessage(selfnodeID, updatedWeight))
+                */
+        if self.qpid_weight_table.iter().any(|(_, weight)| *weight != Time::MAX) {
+            self.qpid_parent = Some(self.qpid_get_smallest_weight_node());
+            if self.qpid_parent.unwrap() != self.node_id {
+                let updated_weight = self.qpid_compute_weight(self.qpid_parent.unwrap());
+                self.network_handle
+                    .send_message(
+                        self.qpid_parent.unwrap(),
+                        NodeToNodeMessage::QPIDFindRootMessage(updated_weight),
+                    )
+                    .unwrap();
+            }
+        }
+
+        match ticket.ticket_type {
+            TicketType::Normal => {
+                self.local_queue_leaving_list.push(ticket);
+                metrics::waitingroom::to_be_let_in_count(self.node_id).inc();
+            }
+            TicketType::Drain => {
+                // This ticket is a dummy ticket. We shouldn't do anything with it.
+            }
+            TicketType::Skip => {
+                // For this ticket, we need to take someone else out of the queue.
+                self.qpid_delete_min()?;
+            }
         }
 
         Ok(())
@@ -362,6 +403,55 @@ where
         if ticket.ticket_type == TicketType::Normal {
             metrics::waitingroom::in_queue_count(self.node_id).inc();
         }
+        if ticket.join_time < self.qpid_current_weight {
+            self.qpid_insert(ticket.join_time);
+        }
+    }
+
+    fn qpid_insert(&mut self, weight: Time) {
+        // TODO QPID counter
+
+        self.qpid_current_weight = weight;
+        if let Some(qpid_parent) = self.qpid_parent {
+            if qpid_parent == self.node_id {
+                return;
+            }
+            let updated_weight = self.qpid_compute_weight(qpid_parent);
+            if updated_weight != self.get_weight_table(qpid_parent).unwrap() {
+                self.network_handle
+                    .send_message(
+                        qpid_parent,
+                        NodeToNodeMessage::QPIDUpdateMessage(updated_weight),
+                    )
+                    .unwrap();
+            }
+        } else {
+            log::warn!("QPID parent is None when trying to insert");
+        }
+    }
+
+    fn get_weight_table(&self, node_id: NodeId) -> Option<Time> {
+        self.qpid_weight_table
+            .iter()
+            .find(|(id, _)| *id == node_id)
+            .map(|(_, weight)| *weight)
+    }
+
+    fn qpid_compute_weight(&self, node_id: NodeId) -> Time {
+        self.qpid_weight_table
+            .iter()
+            .filter(|(id, _)| *id != node_id)
+            .fold(self.qpid_current_weight, |min_weight, (_, weight)| {
+                min_weight.min(*weight)
+            })
+    }
+
+    fn qpid_get_smallest_weight_node(&self) -> NodeId {
+        self.qpid_weight_table
+            .iter()
+            .min_by_key(|(_, weight)| *weight)
+            .map(|(id, _)| *id)
+            .unwrap()
     }
 
     /// Remove the element at the front of the local queue, decrementing the metric if the ticket type is normal.
@@ -373,7 +463,7 @@ where
         element
     }
 
-    // / Remove a specific element from the local queue by identifier, decrementing the metric if the ticket type is normal.
+    /// Remove a specific element from the local queue by identifier, decrementing the metric if the ticket type is normal.
     pub fn remove_from_queue(&mut self, ticket_identifier: TicketIdentifier) {
         if let Some(ticket) = self.local_queue.remove(ticket_identifier) {
             if ticket.ticket_type == TicketType::Normal {
