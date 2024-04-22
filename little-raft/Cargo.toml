@@ -1,4 +1,22 @@
-[workspace]
-members = [
-    "little_raft"
-]
+[package]
+description = "The lightest distributed consensus library. Run your own replicated state machine!"
+name = "little_raft"
+version = "0.2.0"
+authors = ["Ilya Andreev <iandre3@illinois.edu>"]
+edition = "2018"
+license = "MIT"
+homepage = "https://github.com/andreev-io/little-raft"
+repository = "https://github.com/andreev-io/little-raft"
+readme = "../README.md"
+keywords = ["distributed-systems", "raft", "consensus"]
+categories = ["concurrency", "database", "database-implementations"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rand = "0.8.3"
+crossbeam-channel = "0.5.1"
+crossbeam = "0.8.0"
+timer = "0.1.3"
+time = "0.1.39"
+bytes = "0.4.7"
