@@ -1,0 +1,4 @@
+[workspace]
+members = [
+    "little_raft"
+]
