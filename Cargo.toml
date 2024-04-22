@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [ "waitingroom-*" ]
+members = [ "waitingroom-*", "little-raft" ]
 
 [workspace.dependencies]
 waitingroom-core = { path = "./waitingroom-core" }
