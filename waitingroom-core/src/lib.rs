@@ -43,6 +43,7 @@ pub trait WaitingRoomUserTriggered {
 }
 
 /// Returned by the [`WaitingRoomUserTriggered::check_in`] function.
+#[derive(Debug)]
 pub struct CheckInResponse {
     /// This is the refreshed ticket with the updated refresh and expiry times.
     pub new_ticket: Ticket,
