@@ -45,17 +45,19 @@ fn main() {
     let ticket = nodes[0].join().unwrap();
 
     process_messages(&mut nodes);
-    
+
     dummy_time_provider.increase_by(10);
-    
+
     let ticket2 = nodes[1].join().unwrap();
     process_messages(&mut nodes);
-    
+
     nodes[1].qpid_delete_min().unwrap();
     process_messages(&mut nodes);
-    
-    let checkin_result = nodes[0].check_in(ticket).unwrap();
+
+    let checkin_result = nodes[ticket.node_id as usize].check_in(ticket).unwrap();
     assert!(checkin_result.position_estimate == 0);
+    let checkin_result2 = nodes[ticket2.node_id as usize].check_in(ticket2).unwrap();
+    assert!(checkin_result2.position_estimate == 1);
 
     let pass = nodes[0].leave(ticket).unwrap();
 
@@ -69,6 +71,12 @@ fn main() {
     if nodes[0].validate_and_refresh_pass(pass).is_ok() {
         panic!("Pass should have been invalid, but wasn't!")
     };
+
+    dummy_time_provider.increase_by(15000 - 6000);
+
+    if nodes[ticket2.node_id as usize].check_in(ticket2).is_ok() {
+        panic!("Should not have been able to check in after timeout!");
+    }
 
     log::info!("Done");
 }
