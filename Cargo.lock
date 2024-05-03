@@ -2998,6 +2998,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "waitingroom-spanning-trees"
+version = "0.1.0"
+dependencies = [
+ "waitingroom-core",
+]
+
+[[package]]
 name = "want"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
