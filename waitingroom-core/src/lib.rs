@@ -12,7 +12,7 @@ pub mod time;
 pub use error::WaitingRoomError;
 
 /// The type for node identifiers. This is specified here to allow for easy changes in the future.
-pub type NodeId = u64;
+pub type NodeId = usize;
 
 /// These functions are able to be triggered by actions from the user.
 /// In most implementations, they will be called by a server on behalf of the user.
