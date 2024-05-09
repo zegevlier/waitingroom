@@ -63,10 +63,6 @@ pub trait WaitingRoomTimerTriggered {
     /// When a pass is invalidated, a new user is automatically let in.
     fn cleanup(&mut self) -> Result<(), WaitingRoomError>;
 
-    /// This function is used to sync the user counts across nodes.
-    /// For the basic waiting room, this is a no-op.
-    fn sync_user_counts(&mut self) -> Result<(), WaitingRoomError>;
-
     /// This function is used to ensure that the correct number of users are on the site.
     /// If there are less than the minimum number of users, more users are let in.
     /// If there are more than the maximum number of users, users are not let in a number of times.

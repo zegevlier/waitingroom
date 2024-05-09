@@ -4,7 +4,7 @@ use waitingroom_core::{
     network::{DummyNetwork, Latency},
     random::DeterministicRandomProvider,
     time::{DummyTimeProvider, Time},
-    NodeId, WaitingRoomMessageTriggered, WaitingRoomUserTriggered,
+    NodeId, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered, WaitingRoomUserTriggered,
 };
 use waitingroom_distributed::{
     messages::NodeToNodeMessage, DistributedWaitingRoom, GeneralWaitingRoomSettings,
@@ -56,39 +56,82 @@ fn main() {
     dummy_time_provider.increase_by(10);
 
     let ticket2 = nodes[1].join().unwrap();
+
     process_messages(&mut nodes);
 
-    nodes[1].qpid_delete_min().unwrap();
+    nodes.iter_mut().for_each(|node| {
+        node.ensure_correct_user_count().unwrap();
+    });
+
     process_messages(&mut nodes);
 
     let checkin_result = nodes[ticket.node_id].check_in(ticket).unwrap();
+
     assert!(checkin_result.position_estimate == 0);
+
     let checkin_result2 = nodes[ticket2.node_id].check_in(ticket2).unwrap();
+
     assert!(checkin_result2.position_estimate == 1);
 
     let pass = nodes[0].leave(ticket).unwrap();
 
-    let pass = if let Ok(new_pass) = nodes[0].validate_and_refresh_pass(pass) {
+    let _pass = if let Ok(new_pass) = nodes[0].validate_and_refresh_pass(pass) {
         new_pass
     } else {
         panic!("Invalid pass!");
     };
 
+    dummy_time_provider.increase_by(300);
+
+    nodes.iter_mut().for_each(|node| {
+        node.ensure_correct_user_count().unwrap();
+    });
+
+    process_messages(&mut nodes);
+
+    // Now, the other user SHOULDN'T be able to check in, because the first user is still on the site.
+
+    let checkin_result2 = nodes[ticket2.node_id].check_in(ticket2).unwrap();
+
+    assert!(checkin_result2.position_estimate == 1);
+
+    let new_ticket = checkin_result2.new_ticket;
+
+    // Now, we expire the pass and the first user should be able to check in again.
     dummy_time_provider.increase_by(6001);
-    if nodes[0].validate_and_refresh_pass(pass).is_ok() {
-        panic!("Pass should have been invalid, but wasn't!")
-    };
 
-    dummy_time_provider.increase_by(15000 - 6000);
+    // First we need to do a cleanup, otherwise the pass won't be invalidated.
+    nodes.iter_mut().for_each(|node| {
+        node.cleanup().unwrap();
+    });
 
-    if nodes[ticket2.node_id].check_in(ticket2).is_ok() {
-        panic!("Should not have been able to check in after timeout!");
-    }
+    nodes.iter_mut().for_each(|node| {
+        node.ensure_correct_user_count().unwrap();
+    });
 
-    log::info!("Done");
+    process_messages(&mut nodes);
+
+    let checkin_result2 = nodes[new_ticket.node_id].check_in(new_ticket).unwrap();
+
+    assert!(checkin_result2.position_estimate == 0);
+
+    log::info!("Done!");
 }
 
 fn process_messages(nodes: &mut [Node]) {
     log::debug!("Processing messages");
-    while nodes.iter_mut().any(|n| n.receive_message().unwrap()) {}
+    loop {
+        let mut any_received = false;
+
+        // We want to handle the messages on all nodes ~equally until no more messages are received.
+        for node in nodes.iter_mut() {
+            if node.receive_message().unwrap() {
+                any_received = true;
+            }
+        }
+
+        if !any_received {
+            break;
+        }
+    }
 }

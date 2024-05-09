@@ -53,7 +53,7 @@ struct DummyMessage<M> {
 #[derive(Clone, Debug)]
 pub struct DummyNetwork<M>
 where
-    M: Clone,
+    M: Clone + Debug,
 {
     // Using `RefCell` here is not ideal, but it works for this use-case.
     // It seems like the best option for now, and since this is only the mock it doesn't *really* matter.
@@ -65,7 +65,7 @@ where
 
 impl<M> Network<M> for DummyNetwork<M>
 where
-    M: Debug + Clone,
+    M: Clone + Debug,
 {
     type NetworkHandle = DummyNetworkHandle<M>;
 
@@ -88,7 +88,7 @@ where
 
 impl<M> DummyNetwork<M>
 where
-    M: Clone,
+    M: Clone + Debug,
 {
     pub fn new(time_provider: DummyTimeProvider, latency: Latency) -> Self {
         Self {
@@ -145,7 +145,14 @@ where
             .iter()
             .position(|m| m.message.to_node == node && m.arrival_time <= now_time);
         if let Some(index) = index {
-            Ok(Some(messages.remove(index).message))
+            let message = messages.remove(index).message;
+            log::debug!(
+                "[NET] {} <- {}: {:?}",
+                node,
+                message.from_node,
+                message.message
+            );
+            Ok(Some(message))
         } else {
             Ok(None)
         }
@@ -154,7 +161,7 @@ where
 
 pub struct DummyNetworkHandle<M>
 where
-    M: Clone,
+    M: Clone + Debug,
 {
     node: NodeId,
     network: DummyNetwork<M>,
@@ -174,7 +181,7 @@ where
 
 impl<M> NetworkHandle<M> for DummyNetworkHandle<M>
 where
-    M: Debug + Clone,
+    M: Clone + Debug,
 {
     fn send_message(&self, to_node: NodeId, message: M) -> Result<(), NetworkError> {
         log::debug!("[NET] {} -> {}: {:?}", self.node, to_node, message);

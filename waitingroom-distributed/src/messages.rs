@@ -5,4 +5,6 @@ pub enum NodeToNodeMessage {
     QPIDUpdateMessage(Time),
     QPIDDeleteMin,
     QPIDFindRootMessage(Time),
+    CountRequest(Time),
+    CountResponse(Time, usize),
 }

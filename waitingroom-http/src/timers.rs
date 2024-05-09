@@ -15,6 +15,7 @@ pub(crate) async fn timers(
     waitingroom_settings: &WaitingRoomTimerSettings,
 ) {
     log::debug!("Setting up timers...");
+    // TODO: Before we can use this for the distributed system, we need the ensure_correct_count to be triggered at the same time on all nodes.
     macro_rules! timer {
         ($name:ident, $interval:expr, $callback:expr) => {
             let mut $name = time::interval(Duration::from_millis($interval as u64));
@@ -50,11 +51,5 @@ pub(crate) async fn timers(
         BasicWaitingRoom::ensure_correct_user_count
     );
 
-    timer!(
-        sync_user_counts,
-        waitingroom_settings.sync_user_counts_interval,
-        BasicWaitingRoom::sync_user_counts
-    );
-
-    tokio::join!(cleanup, ensure_correct_count, sync_user_counts).0;
+    tokio::join!(cleanup, ensure_correct_count).0;
 }
