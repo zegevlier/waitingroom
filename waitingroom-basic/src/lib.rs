@@ -1,6 +1,7 @@
 use waitingroom_core::{
     metrics,
     pass::Pass,
+    random::RandomProvider,
     retain_with_count, settings,
     ticket::{Ticket, TicketIdentifier, TicketType},
     time::TimeProvider,
@@ -17,9 +18,10 @@ const SELF_NODE_ID: NodeId = 0;
 
 /// This is a very basic implementation of a waiting room.
 /// It only supports a single node. It's useful for testing.
-pub struct BasicWaitingRoom<T>
+pub struct BasicWaitingRoom<T, R>
 where
     T: TimeProvider,
+    R: RandomProvider,
 {
     local_queue: LocalQueue,
     queue_leaving_list: Vec<Ticket>,
@@ -28,11 +30,13 @@ where
     settings: GeneralWaitingRoomSettings,
 
     time_provider: T,
+    random_provider: R,
 }
 
-impl<T> WaitingRoomUserTriggered for BasicWaitingRoom<T>
+impl<T, R> WaitingRoomUserTriggered for BasicWaitingRoom<T, R>
 where
     T: TimeProvider,
+    R: RandomProvider,
 {
     fn join(&mut self) -> Result<waitingroom_core::ticket::Ticket, WaitingRoomError> {
         let ticket = waitingroom_core::ticket::Ticket::new(
@@ -40,6 +44,7 @@ where
             self.settings.ticket_refresh_time,
             self.settings.ticket_expiry_time,
             &self.time_provider,
+            &self.random_provider,
         );
         self.enqueue(ticket);
         Ok(ticket)
@@ -213,9 +218,10 @@ where
     }
 }
 
-impl<T> WaitingRoomTimerTriggered for BasicWaitingRoom<T>
+impl<T, R> WaitingRoomTimerTriggered for BasicWaitingRoom<T, R>
 where
     T: TimeProvider,
+    R: RandomProvider,
 {
     fn cleanup(&mut self) -> Result<(), WaitingRoomError> {
         let now_time = self.time_provider.get_now_time();
@@ -270,18 +276,25 @@ where
 }
 
 // Since the basic waiting room only has a single node, these are all unreachable, since they should never be called.
-impl<T> WaitingRoomMessageTriggered for BasicWaitingRoom<T> where T: TimeProvider {}
-
-impl<T> BasicWaitingRoom<T>
+impl<T, R> WaitingRoomMessageTriggered for BasicWaitingRoom<T, R>
 where
     T: TimeProvider,
+    R: RandomProvider,
 {
-    pub fn new(settings: GeneralWaitingRoomSettings, time_provider: T) -> Self {
+}
+
+impl<T, R> BasicWaitingRoom<T, R>
+where
+    T: TimeProvider,
+    R: RandomProvider,
+{
+    pub fn new(settings: GeneralWaitingRoomSettings, time_provider: T, random_provider: R) -> Self {
         Self {
             local_queue: LocalQueue::new(),
             queue_leaving_list: Vec::new(),
             on_site_list: Vec::new(),
             time_provider,
+            random_provider,
             settings,
         }
     }

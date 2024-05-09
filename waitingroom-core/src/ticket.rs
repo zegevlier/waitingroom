@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    random::RandomProvider,
     time::{Time, TimeProvider},
     NodeId,
 };
@@ -47,16 +48,18 @@ pub struct Ticket {
 }
 
 impl Ticket {
-    pub fn new<T>(
+    pub fn new<T, R>(
         node_id: NodeId,
         ticket_refresh_time: Time,
         ticket_expiry_time: Time,
         time_provider: &T,
+        random_provider: &R,
     ) -> Self
     where
         T: TimeProvider,
+        R: RandomProvider,
     {
-        let identifier = rand::random();
+        let identifier = random_provider.random_u64();
         let now_time = time_provider.get_now_time();
 
         Self {

@@ -3,6 +3,7 @@ use waitingroom_core::{
     metrics,
     network::{Network, NetworkHandle},
     pass::Pass,
+    random::RandomProvider,
     retain_with_count, settings,
     ticket::{Ticket, TicketIdentifier, TicketType},
     time::{Time, TimeProvider},
@@ -20,9 +21,10 @@ pub mod messages;
 
 /// This is the waiting room implementation described in the associated paper.
 #[derive(Debug)]
-pub struct DistributedWaitingRoom<T, N>
+pub struct DistributedWaitingRoom<T, R, N>
 where
     T: TimeProvider,
+    R: RandomProvider,
     N: Network<NodeToNodeMessage>,
 {
     local_queue: LocalQueue,
@@ -35,14 +37,16 @@ where
     network_handle: N::NetworkHandle,
 
     time_provider: T,
+    random_provider: R,
 
     qpid_parent: Option<NodeId>,
     qpid_weight_table: Vec<(NodeId, Time)>,
 }
 
-impl<T, N> WaitingRoomUserTriggered for DistributedWaitingRoom<T, N>
+impl<T, R, N> WaitingRoomUserTriggered for DistributedWaitingRoom<T, R, N>
 where
     T: TimeProvider,
+    R: RandomProvider,
     N: Network<NodeToNodeMessage>,
 {
     fn join(&mut self) -> Result<waitingroom_core::ticket::Ticket, WaitingRoomError> {
@@ -52,6 +56,7 @@ where
             self.settings.ticket_refresh_time,
             self.settings.ticket_expiry_time,
             &self.time_provider,
+            &self.random_provider,
         );
         self.enqueue(ticket);
         Ok(ticket)
@@ -230,9 +235,10 @@ where
     }
 }
 
-impl<T, N> WaitingRoomTimerTriggered for DistributedWaitingRoom<T, N>
+impl<T, R, N> WaitingRoomTimerTriggered for DistributedWaitingRoom<T, R, N>
 where
     T: TimeProvider,
+    R: RandomProvider,
     N: Network<NodeToNodeMessage>,
 {
     fn cleanup(&mut self) -> Result<(), WaitingRoomError> {
@@ -294,9 +300,10 @@ where
 }
 
 // Since the basic waiting room only has a single node, these are all unreachable, since they should never be called.
-impl<T, N> WaitingRoomMessageTriggered for DistributedWaitingRoom<T, N>
+impl<T, R, N> WaitingRoomMessageTriggered for DistributedWaitingRoom<T, R, N>
 where
     T: TimeProvider,
+    R: RandomProvider,
     N: Network<NodeToNodeMessage>,
 {
     fn receive_message(&mut self) -> Result<bool, WaitingRoomError> {
@@ -317,15 +324,17 @@ where
     }
 }
 
-impl<T, N> DistributedWaitingRoom<T, N>
+impl<T, R, N> DistributedWaitingRoom<T, R, N>
 where
     T: TimeProvider,
+    R: RandomProvider,
     N: Network<NodeToNodeMessage>,
 {
     pub fn new(
         settings: GeneralWaitingRoomSettings,
         node_id: NodeId,
         time_provider: T,
+        random_provider: R,
         network: N,
     ) -> Self {
         let network_handle = match network.join(node_id) {
@@ -343,6 +352,7 @@ where
             qpid_weight_table: vec![],
             node_id,
             time_provider,
+            random_provider,
             settings,
             network_handle,
         }
@@ -493,9 +503,7 @@ where
         self.qpid_weight_table
             .iter()
             .filter(|(id, _)| *id != node_id)
-            .fold(Time::MAX, |min_weight, (_, weight)| {
-                min_weight.min(*weight)
-            })
+            .fold(Time::MAX, |min_weight, (_, weight)| min_weight.min(*weight))
     }
 
     fn qpid_get_smallest_weight_node(&self) -> NodeId {

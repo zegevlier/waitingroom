@@ -5,6 +5,7 @@ mod error;
 pub mod metrics;
 pub mod network;
 pub mod pass;
+pub mod random;
 pub mod settings;
 pub mod ticket;
 pub mod time;

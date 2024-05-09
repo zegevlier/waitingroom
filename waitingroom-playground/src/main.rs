@@ -1,7 +1,8 @@
 // This module is for testing random things. Do not rely on it for anything.
 
 use waitingroom_core::{
-    network::DummyNetwork,
+    network::{DummyNetwork, Latency},
+    random::DeterministicRandomProvider,
     time::{DummyTimeProvider, Time},
     NodeId, WaitingRoomMessageTriggered, WaitingRoomUserTriggered,
 };
@@ -9,7 +10,11 @@ use waitingroom_distributed::{
     messages::NodeToNodeMessage, DistributedWaitingRoom, GeneralWaitingRoomSettings,
 };
 
-type Node = DistributedWaitingRoom<DummyTimeProvider, DummyNetwork<NodeToNodeMessage>>;
+type Node = DistributedWaitingRoom<
+    DummyTimeProvider,
+    DeterministicRandomProvider,
+    DummyNetwork<NodeToNodeMessage>,
+>;
 
 fn main() {
     env_logger::init();
@@ -24,7 +29,8 @@ fn main() {
 
     log::info!("Instantiating dummy time and network");
     let dummy_time_provider = DummyTimeProvider::new();
-    let dummy_network: DummyNetwork<NodeToNodeMessage> = DummyNetwork::new();
+    let dummy_network = DummyNetwork::new(dummy_time_provider.clone(), Latency::Fixed(0));
+    let random_provider = DeterministicRandomProvider::new(1);
 
     let mut nodes = vec![];
 
@@ -36,6 +42,7 @@ fn main() {
             settings,
             node_id,
             dummy_time_provider.clone(),
+            random_provider.clone(),
             dummy_network.clone(),
         );
         node.testing_overwrite_qpid(Some(1), init_weight_table.clone());
@@ -54,9 +61,9 @@ fn main() {
     nodes[1].qpid_delete_min().unwrap();
     process_messages(&mut nodes);
 
-    let checkin_result = nodes[ticket.node_id as usize].check_in(ticket).unwrap();
+    let checkin_result = nodes[ticket.node_id].check_in(ticket).unwrap();
     assert!(checkin_result.position_estimate == 0);
-    let checkin_result2 = nodes[ticket2.node_id as usize].check_in(ticket2).unwrap();
+    let checkin_result2 = nodes[ticket2.node_id].check_in(ticket2).unwrap();
     assert!(checkin_result2.position_estimate == 1);
 
     let pass = nodes[0].leave(ticket).unwrap();
@@ -74,7 +81,7 @@ fn main() {
 
     dummy_time_provider.increase_by(15000 - 6000);
 
-    if nodes[ticket2.node_id as usize].check_in(ticket2).is_ok() {
+    if nodes[ticket2.node_id].check_in(ticket2).is_ok() {
         panic!("Should not have been able to check in after timeout!");
     }
 

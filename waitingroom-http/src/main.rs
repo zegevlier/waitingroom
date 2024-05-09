@@ -15,6 +15,7 @@ use hyper_util::rt::TokioExecutor;
 use settings::HttpServerSettings;
 use waitingroom_basic::BasicWaitingRoom;
 use waitingroom_core::pass::Pass;
+use waitingroom_core::random::TrueRandomProvider;
 use waitingroom_core::ticket::Ticket;
 use waitingroom_core::time::SystemTimeProvider;
 use waitingroom_core::WaitingRoomUserTriggered;
@@ -38,7 +39,7 @@ type Client = hyper_util::client::legacy::Client<HttpConnector, Body>;
 
 #[derive(Clone)]
 struct AppState {
-    waitingroom: Arc<Mutex<BasicWaitingRoom<SystemTimeProvider>>>,
+    waitingroom: Arc<Mutex<BasicWaitingRoom<SystemTimeProvider, TrueRandomProvider>>>,
     client: Client,
     key: Key,
     settings: HttpServerSettings,
@@ -296,6 +297,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let waitingroom = Arc::new(Mutex::new(BasicWaitingRoom::new(
         cli.settings.waitingroom,
         SystemTimeProvider::new(),
+        TrueRandomProvider::new(),
     )));
 
     let timers = timers::timers(waitingroom.clone(), &cli.settings.timer);

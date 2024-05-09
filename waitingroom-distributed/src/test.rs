@@ -1,5 +1,6 @@
 use waitingroom_core::{
-    network::DummyNetwork,
+    network::{DummyNetwork, Latency},
+    random::DeterministicRandomProvider,
     settings::GeneralWaitingRoomSettings,
     time::{DummyTimeProvider, Time},
     NodeId, WaitingRoomMessageTriggered, WaitingRoomUserTriggered,
@@ -7,7 +8,11 @@ use waitingroom_core::{
 
 use crate::{messages::NodeToNodeMessage, DistributedWaitingRoom};
 
-type Node = DistributedWaitingRoom<DummyTimeProvider, DummyNetwork<NodeToNodeMessage>>;
+type Node = DistributedWaitingRoom<
+    DummyTimeProvider,
+    DeterministicRandomProvider,
+    DummyNetwork<NodeToNodeMessage>,
+>;
 
 #[test]
 fn basic_test() {
@@ -20,10 +25,16 @@ fn basic_test() {
     };
 
     let dummy_time_provider = DummyTimeProvider::new();
-    let dummy_network: DummyNetwork<NodeToNodeMessage> = DummyNetwork::new();
+    let deterministic_random_provider = DeterministicRandomProvider::new(1);
+    let dummy_network = DummyNetwork::new(dummy_time_provider.clone(), Latency::Fixed(0));
 
-    let mut node =
-        DistributedWaitingRoom::new(settings, 1, dummy_time_provider.clone(), dummy_network);
+    let mut node = DistributedWaitingRoom::new(
+        settings,
+        1,
+        dummy_time_provider.clone(),
+        deterministic_random_provider,
+        dummy_network,
+    );
 
     node.testing_overwrite_qpid(Some(1), vec![(1, Time::MAX)]);
 
@@ -58,7 +69,8 @@ fn simple_distributed_test() {
 
     log::info!("Instantiating dummy time and network");
     let dummy_time_provider = DummyTimeProvider::new();
-    let dummy_network: DummyNetwork<NodeToNodeMessage> = DummyNetwork::new();
+    let dummy_random_provider = DeterministicRandomProvider::new(1);
+    let dummy_network = DummyNetwork::new(dummy_time_provider.clone(), Latency::Fixed(0));
 
     let mut nodes = vec![];
 
@@ -70,6 +82,7 @@ fn simple_distributed_test() {
             settings,
             node_id,
             dummy_time_provider.clone(),
+            dummy_random_provider.clone(),
             dummy_network.clone(),
         );
         node.testing_overwrite_qpid(Some(1), init_weight_table.clone());
@@ -88,9 +101,9 @@ fn simple_distributed_test() {
     nodes[1].qpid_delete_min().unwrap();
     process_messages(&mut nodes);
 
-    let checkin_result = nodes[ticket.node_id as usize].check_in(ticket).unwrap();
+    let checkin_result = nodes[ticket.node_id].check_in(ticket).unwrap();
     assert!(checkin_result.position_estimate == 0);
-    let checkin_result2 = nodes[ticket2.node_id as usize].check_in(ticket2).unwrap();
+    let checkin_result2 = nodes[ticket2.node_id].check_in(ticket2).unwrap();
     assert!(checkin_result2.position_estimate == 1);
 
     let pass = nodes[0].leave(ticket).unwrap();
@@ -108,7 +121,7 @@ fn simple_distributed_test() {
 
     dummy_time_provider.increase_by(15000 - 6000);
 
-    if nodes[ticket2.node_id as usize].check_in(ticket2).is_ok() {
+    if nodes[ticket2.node_id].check_in(ticket2).is_ok() {
         panic!("Should not have been able to check in after timeout!");
     }
 
