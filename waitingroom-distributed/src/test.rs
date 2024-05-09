@@ -6,6 +6,8 @@ use waitingroom_core::{
     NodeId, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered, WaitingRoomUserTriggered,
 };
 
+use test_log::test;
+
 use crate::{messages::NodeToNodeMessage, DistributedWaitingRoom};
 
 type Node = DistributedWaitingRoom<
