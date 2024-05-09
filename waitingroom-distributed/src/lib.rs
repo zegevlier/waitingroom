@@ -41,6 +41,10 @@ where
 
     qpid_parent: Option<NodeId>,
     qpid_weight_table: Vec<(NodeId, Time)>,
+
+    count_parent: Option<NodeId>,
+    count_iteration: Time,
+    count_responses: Vec<(NodeId, usize)>,
 }
 
 impl<T, R, N> WaitingRoomUserTriggered for DistributedWaitingRoom<T, R, N>
@@ -268,34 +272,23 @@ where
         Ok(())
     }
 
-    fn sync_user_counts(&mut self) -> Result<(), WaitingRoomError> {
-        log::info!("[NODE {}] sync user counts", self.node_id);
-        // This is a no-op, since there is only a single node.
-        // Nothing needs to be synced.
-        Ok(())
-    }
-
     fn ensure_correct_user_count(&mut self) -> Result<(), WaitingRoomError> {
         log::info!("[NODE {}] ensure correct user count", self.node_id);
-        // We use this user count, because people that are about to leave the queue
-        // should be counted as users on site.
-        let user_count = self.local_on_site_list.len() + self.local_queue_leaving_list.len();
-
-        // If there are too few users on site, let users out of the queue.
-        if user_count < self.settings.min_user_count {
-            for _ in 0..(self.settings.min_user_count - self.local_on_site_list.len()) {
-                self.qpid_delete_min()?;
-            }
-        }
-        // If there are too many users on the site, add dummy users to the queue.
-        if user_count > self.settings.max_user_count {
-            // This should never happen
-            for _ in 0..(self.local_on_site_list.len() - self.settings.max_user_count) {
-                self.enqueue(Ticket::new_drain(self.node_id));
-            }
+        // Only start a count if we are the root node.
+        if self.qpid_parent != Some(self.node_id) {
+            log::debug!("[NODE {}] not root node, not starting count", self.node_id);
+            return Ok(());
         }
 
-        Ok(())
+        // We use the current time as the count iteration
+        let iteration = self.time_provider.get_now_time();
+        log::info!(
+            "[NODE {}] starting new count it: {}",
+            self.node_id,
+            iteration
+        );
+        // This will start the count process from this node.
+        self.count_request(self.node_id, iteration)
     }
 }
 
@@ -315,6 +308,12 @@ where
                 NodeToNodeMessage::QPIDDeleteMin => self.qpid_delete_min(),
                 NodeToNodeMessage::QPIDFindRootMessage(weight) => {
                     self.qpid_handle_find_root(message.from_node, weight)
+                }
+                NodeToNodeMessage::CountRequest(count_iteration) => {
+                    self.count_request(message.from_node, count_iteration)
+                }
+                NodeToNodeMessage::CountResponse(count_iteration, count) => {
+                    self.count_response(message.from_node, count_iteration, count)
                 }
             }?;
             Ok(true)
@@ -355,6 +354,9 @@ where
             random_provider,
             settings,
             network_handle,
+            count_parent: None,
+            count_iteration: Time::MIN,
+            count_responses: vec![],
         }
     }
 
@@ -514,6 +516,10 @@ where
             .unwrap()
     }
 
+    fn qpid_neighbour_count(&self) -> usize {
+        self.qpid_weight_table.len() - 1 // We don't count ourselves
+    }
+
     pub fn qpid_delete_min(&mut self) -> Result<(), WaitingRoomError> {
         log::info!("[NODE {}] QPID delete min", self.node_id);
         if self.qpid_parent.is_none() {
@@ -587,5 +593,142 @@ where
                 metrics::waitingroom::in_queue_count(self.node_id).dec();
             }
         }
+    }
+
+    fn count_request(
+        &mut self,
+        from_node: NodeId,
+        count_iteration: Time,
+    ) -> Result<(), WaitingRoomError> {
+        log::info!("[NODE {}] count request", self.node_id);
+        if count_iteration <= self.count_iteration {
+            // We've already participated in a count iteration that is higher than this one.
+            // We don't need to respond.
+            log::debug!(
+                "[NODE {}] count request from {} with count {} is lower than current count {}",
+                self.node_id,
+                from_node,
+                count_iteration,
+                self.count_iteration
+            );
+            return Ok(());
+        }
+
+        self.count_iteration = count_iteration;
+        self.count_parent = Some(from_node);
+        self.count_responses.clear();
+
+        // If we have any neighbours, we need to ask them to participate in the count before we can respond.
+        if self.qpid_neighbour_count() > 1 || self.node_id == from_node {
+            for (node_id, _) in &self.qpid_weight_table {
+                if *node_id != from_node {
+                    self.network_handle
+                        .send_message(*node_id, NodeToNodeMessage::CountRequest(count_iteration))?;
+                }
+            }
+        } else {
+            // If we don't have any neighbours, we can respond immediately.
+            if self.node_id == from_node {
+                self.count_response(from_node, count_iteration, 0)?;
+            } else {
+                self.network_handle.send_message(
+                    from_node,
+                    NodeToNodeMessage::CountResponse(count_iteration, self.get_on_site_count()),
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn get_on_site_count(&self) -> usize {
+        self.local_on_site_list.len() + self.local_queue_leaving_list.len()
+    }
+
+    fn count_response(
+        &mut self,
+        from_node: NodeId,
+        count_iteration: Time,
+        count: usize,
+    ) -> Result<(), WaitingRoomError> {
+        log::info!(
+            "[NODE {}] count response fr: {} it: {} c: {}",
+            self.node_id,
+            from_node,
+            count_iteration,
+            count
+        );
+        if count_iteration != self.count_iteration {
+            // This message isn't part of the current count iteration. Ignore it.
+            log::debug!(
+                "[NODE {}] count response from {} with count {} is not for current count {}",
+                self.node_id,
+                from_node,
+                count_iteration,
+                self.count_iteration
+            );
+            return Ok(());
+        }
+
+        self.count_responses.push((from_node, count));
+
+        if self.count_responses.len() >= self.qpid_neighbour_count() {
+            // We have received all responses.
+            let others_count = self
+                .count_responses
+                .iter()
+                .map(|(_, count)| *count)
+                .sum::<usize>();
+
+            let own_count = self.get_on_site_count();
+            let total_count = others_count + own_count;
+
+            if Some(self.node_id) == self.count_parent {
+                // We are the count root, so we need to let users out of the queue.
+                log::debug!(
+                    "[NODE {}] count root with total count {}",
+                    self.node_id,
+                    total_count
+                );
+                self.ensure_correct_site_count(total_count)?;
+            } else {
+                // We are not the count parent node, so we need to send our total count to the parent node.
+                self.network_handle.send_message(
+                    self.count_parent.unwrap(),
+                    NodeToNodeMessage::CountResponse(count_iteration, total_count),
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// This function triggers an amount of QPID dequeue operations. The amount is the waiting room's minimum user count minus the current user count, provided in the parameter.
+    /// If there are too many users on the site, this function will add dummy users to the queue, which will be dequeued by the QPID algorithm and thus lower the user count on the site.
+    fn ensure_correct_site_count(&mut self, count: usize) -> Result<(), WaitingRoomError> {
+        log::info!("[NODE {}] let users out of queue", self.node_id);
+        if count < self.settings.min_user_count {
+            log::debug!(
+                "[NODE {}] not enough users on site, need to let {} users out of queue",
+                self.node_id,
+                self.settings.min_user_count - count
+            );
+            for _ in 0..(self.settings.min_user_count - count) {
+                self.qpid_delete_min()?;
+            }
+        }
+
+        if count > self.settings.max_user_count {
+            log::debug!(
+                "[NODE {}] too many users on site, need to add {} dummy users to the queue",
+                self.node_id,
+                count - self.settings.max_user_count
+            );
+            for _ in 0..(count - self.settings.max_user_count) {
+                self.enqueue(Ticket::new_drain(self.node_id));
+            }
+        }
+
+        Ok(())
     }
 }

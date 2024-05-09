@@ -248,12 +248,6 @@ where
         Ok(())
     }
 
-    fn sync_user_counts(&mut self) -> Result<(), WaitingRoomError> {
-        // This is a no-op, since there is only a single node.
-        // Nothing needs to be synced.
-        Ok(())
-    }
-
     fn ensure_correct_user_count(&mut self) -> Result<(), WaitingRoomError> {
         // We use this user count, because people that are about to leave the queue
         // should be counted as users on site.
