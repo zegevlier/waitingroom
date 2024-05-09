@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 waitingroom-core = { workspace = true }
-itertools = { workspace = true}
+itertools = { workspace = true }

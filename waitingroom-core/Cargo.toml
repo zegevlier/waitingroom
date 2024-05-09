@@ -9,5 +9,5 @@ edition = "2021"
 rand = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 foundations = { workspace = true }
-log = "0.4.21"
-rand_chacha = "0.3.1"
+log = { workspace = true }
+rand_chacha = { workspace = true }
