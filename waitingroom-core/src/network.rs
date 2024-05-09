@@ -2,7 +2,12 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use log;
 
-use crate::{error::NetworkError, NodeId};
+use crate::{
+    error::NetworkError,
+    random::{DeterministicRandomProvider, RandomProvider},
+    time::{DummyTimeProvider, TimeProvider},
+    NodeId,
+};
 
 #[derive(Debug)]
 pub struct Message<M> {
@@ -24,6 +29,27 @@ pub trait NetworkHandle<M>: Debug {
     fn receive_message(&self) -> Result<Option<Message<M>>, NetworkError>;
 }
 
+#[derive(Clone)]
+pub enum Latency {
+    Fixed(u128),
+    Random(u128, u128, DeterministicRandomProvider),
+}
+
+impl Debug for Latency {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Fixed(arg0) => f.debug_tuple("Fixed").field(arg0).finish(),
+            Self::Random(arg0, arg1, _) => f.debug_tuple("Random").field(arg0).field(arg1).finish(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct DummyMessage<M> {
+    message: Message<M>,
+    arrival_time: u128,
+}
+
 #[derive(Clone, Debug)]
 pub struct DummyNetwork<M>
 where
@@ -32,7 +58,9 @@ where
     // Using `RefCell` here is not ideal, but it works for this use-case.
     // It seems like the best option for now, and since this is only the mock it doesn't *really* matter.
     nodes: Rc<RefCell<Vec<NodeId>>>,
-    messages: Rc<RefCell<Vec<Message<M>>>>,
+    messages: Rc<RefCell<Vec<DummyMessage<M>>>>,
+    time_provider: DummyTimeProvider,
+    latency: Latency,
 }
 
 impl<M> Network<M> for DummyNetwork<M>
@@ -62,10 +90,12 @@ impl<M> DummyNetwork<M>
 where
     M: Clone,
 {
-    pub fn new() -> Self {
+    pub fn new(time_provider: DummyTimeProvider, latency: Latency) -> Self {
         Self {
             nodes: Rc::new(RefCell::new(Vec::new())),
             messages: Rc::new(RefCell::new(Vec::new())),
+            time_provider,
+            latency,
         }
     }
 
@@ -87,31 +117,38 @@ where
         if !self.nodes.borrow().contains(&to_node) {
             return Err(NetworkError::DestNodeNotFound);
         }
-        self.messages.borrow_mut().push(Message {
-            from_node,
-            to_node,
-            message,
+        let latency = match &self.latency {
+            Latency::Fixed(latency) => *latency,
+            Latency::Random(min, max, random_provider) => {
+                let random = random_provider.random_u64() as u128;
+                min + random % (max - min)
+            }
+        };
+
+        let now_time = self.time_provider.get_now_time();
+
+        self.messages.borrow_mut().push(DummyMessage {
+            message: Message {
+                from_node,
+                to_node,
+                message,
+            },
+            arrival_time: now_time + latency,
         });
         Ok(())
     }
 
     fn receive_message(&self, node: NodeId) -> Result<Option<Message<M>>, NetworkError> {
         let mut messages = self.messages.borrow_mut();
-        let index = messages.iter().position(|m| m.to_node == node);
+        let now_time = self.time_provider.get_now_time();
+        let index = messages
+            .iter()
+            .position(|m| m.message.to_node == node && m.arrival_time <= now_time);
         if let Some(index) = index {
-            Ok(Some(messages.remove(index)))
+            Ok(Some(messages.remove(index).message))
         } else {
             Ok(None)
         }
-    }
-}
-
-impl<M> Default for DummyNetwork<M>
-where
-    M: Clone,
-{
-    fn default() -> Self {
-        Self::new()
     }
 }
 
