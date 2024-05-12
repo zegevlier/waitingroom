@@ -158,32 +158,6 @@ where
         Ok(pass)
     }
 
-    fn disconnect(
-        &mut self,
-        identification: waitingroom_core::Identification,
-    ) -> Result<(), WaitingRoomError> {
-        match identification {
-            waitingroom_core::Identification::Ticket(ticket) => {
-                if self.local_queue.contains(ticket.identifier) {
-                    self.remove_from_queue(ticket.identifier);
-                } else {
-                    // Since we don't know whether the value is in the queue, and we cannot assume it is actually removed,
-                    // we count the number of items removed from the list (either 0 or 1) and decrement the metric by that.
-                    let removed_count =
-                        retain_with_count(&mut self.queue_leaving_list, |t| t != &ticket);
-                    metrics::waitingroom::to_be_let_in_count(SELF_NODE_ID).dec_by(removed_count);
-                }
-            }
-            waitingroom_core::Identification::Pass(pass) => {
-                let removed_count =
-                    retain_with_count(&mut self.on_site_list, |p| p.identifier != pass.identifier);
-                metrics::waitingroom::on_site_count(SELF_NODE_ID).dec_by(removed_count);
-            }
-        }
-
-        Ok(())
-    }
-
     fn validate_and_refresh_pass(
         &mut self,
         pass: waitingroom_core::pass::Pass,

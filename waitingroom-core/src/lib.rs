@@ -32,12 +32,6 @@ pub trait WaitingRoomUserTriggered {
     /// If the ticket is invalid, an error is returned instead.
     fn leave(&mut self, ticket: Ticket) -> Result<Pass, WaitingRoomError>;
 
-    /// When this function is called with an identification, the identification is removed from the waiting room
-    /// and, where possible, invalidated. This function should be called when the user navigates away from the
-    /// waiting room page, or when the user is done with the resource. If this function is not called, the
-    /// identification will remain valid until it expires, potentially slowing down the waiting room unnecessarily.
-    fn disconnect(&mut self, identification: Identification) -> Result<(), WaitingRoomError>;
-
     /// This function is used to validate whether a pass is valid. If it is valid, it is refreshed and returned.
     /// If it is invalid, an error is returned instead.
     fn validate_and_refresh_pass(&mut self, pass: Pass) -> Result<Pass, WaitingRoomError>;
