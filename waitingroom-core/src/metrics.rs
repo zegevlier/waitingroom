@@ -1,5 +1,6 @@
 use foundations::telemetry::metrics::{metrics, Gauge};
 
+#[allow(clippy::empty_docs)] // Macro generated this error - I don't know why
 #[metrics]
 pub mod waitingroom {
     pub fn in_queue_count(node_id: usize) -> Gauge;

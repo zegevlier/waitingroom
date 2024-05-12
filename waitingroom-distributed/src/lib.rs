@@ -5,7 +5,7 @@ use waitingroom_core::{
     pass::Pass,
     random::RandomProvider,
     retain_with_count, settings,
-    ticket::{Ticket, TicketIdentifier, TicketType},
+    ticket::{Ticket, TicketType},
     time::{Time, TimeProvider},
     NodeId, WaitingRoomError, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered,
     WaitingRoomUserTriggered,
@@ -13,13 +13,17 @@ use waitingroom_core::{
 use waitingroom_local_queue::LocalQueue;
 
 pub use settings::GeneralWaitingRoomSettings;
+use weight_table::WeightTable;
 
 #[cfg(test)]
 mod test;
 
+mod weight_table;
+
 pub mod messages;
 
-/// This is the waiting room implementation described in the associated paper.
+/// This is the waiting room implementation described in the associated thesis.
+/// TODO: Add more information here.
 #[derive(Debug)]
 pub struct DistributedWaitingRoom<T, R, N>
 where
@@ -27,23 +31,37 @@ where
     R: RandomProvider,
     N: Network<NodeToNodeMessage>,
 {
+    /// The local queue is the queue on this node. It contains all the tickets that are waiting to be let in.
     local_queue: LocalQueue,
+    /// The local queue leaving list is a list of tickets that are allowed to leave the queue, but have not yet done so.
     local_queue_leaving_list: Vec<Ticket>,
+    /// The local on site list is a list of passes that are currently on site.
     local_on_site_list: Vec<Pass>,
 
+    /// Settings passed in when creating the waiting room.
     settings: GeneralWaitingRoomSettings,
+    /// The node ID is a unique identifier for this node.
     node_id: NodeId,
 
+    /// The network handle is used to send and receive messages to and from other nodes.
     network_handle: N::NetworkHandle,
 
+    /// The time provider is used to get the current time, TODO: And set timers. This is passed in to allow for deterministic testing.
     time_provider: T,
+    /// The random provider is used to generate random numbers. This is passed in to allow for deterministic testing.
     random_provider: R,
 
+    /// The QPID parent is the ID of the parent node in the QPID tree.
     qpid_parent: Option<NodeId>,
-    qpid_weight_table: Vec<(NodeId, Time)>,
+    /// The QPID weight table is a list of all the neighbours of this node, and their current "weights".
+    qpid_weight_table: WeightTable,
 
+    /// The count parent is the ID of the parent node in the count tree.
+    /// The count tree is used to determine the total number of users on the site, which is then used to ensure the correct number of users are on site.
     count_parent: Option<NodeId>,
+    /// Each "count" has an iteration number, which is used to determine which count is the most recent.
     count_iteration: Time,
+    /// The count responses are used to store the responses from the neighbours in the count tree. They are aggregated sent to the parent when all responses are received.
     count_responses: Vec<(NodeId, usize)>,
 }
 
@@ -62,6 +80,11 @@ where
             &self.time_provider,
             &self.random_provider,
         );
+        log::debug!(
+            "[NODE {}] created ticket {}",
+            self.node_id,
+            ticket.identifier
+        );
         self.enqueue(ticket);
         Ok(ticket)
     }
@@ -77,13 +100,15 @@ where
         }
 
         if ticket.node_id != self.node_id {
-            // This should never happen, since we only have a single node.
-            // But, if it does, we need to add the ticket to the local queue.
+            // This happens when the user tries to check in at a different node.
+            // This is expected when the previous node went down. The user will need to re-join the queue at the new node.
+            // Since, when we get here, the ticket is already confirmed to be valid, we can just add the ticket to the queue.
             self.enqueue(ticket);
         }
 
+        // TODO: Make a better estimate of the position. A super simple way would be to multiply by the number of nodes, but that kinda sucks.
         let position_estimate = match self.local_queue.get_position(ticket.identifier) {
-            Some(position) => position + 1, // 0 is reserved for users who are allowed to leave the queue.
+            Some(position) => position + 1, // 0 is reserved for users who are allowed to leave the queue right now.
             None => {
                 if self.local_queue_leaving_list.contains(&ticket) {
                     // The ticket is in the queue leaving list.
@@ -91,7 +116,7 @@ where
                     // When this happens, we send the user's position estimate as 0.
                     0
                 } else {
-                    // The ticket is not in the queue leaving list.
+                    // The ticket is not in the queue leaving list, nor is it in the queue.
                     // This usually means the ticket has already been used to leave the queue.
                     // They can't use this ticket again, so it is invalid.
                     return Err(WaitingRoomError::TicketNotInQueue);
@@ -102,13 +127,13 @@ where
         let position_estimate = if position_estimate > ticket.previous_position_estimate {
             // The ticket has moved backwards in the queue.
             // This should never happen with a single node, but may happen with multiple nodes.
-            // If it does, we need to send the user's old position estimate.
+            // If it does, we need to send the user's old position estimate to not confuse them.
             ticket.previous_position_estimate
         } else {
             position_estimate
         };
 
-        // call refresh on the ticket
+        // Call refresh on the ticket to update the join time and expiry time.
         let ticket = self
             .local_queue
             .entry(ticket.identifier)
@@ -150,8 +175,8 @@ where
         }
 
         if ticket.node_id != self.node_id {
-            // This should never happen, since we only have a single node.
-            // But, if it does, the user will need to re-join the queue.
+            // If the user tries to leave the queue at a different node, we error.
+            // They need to either check in at the correct node, or re-join the queue so they can leave at the correct node.
             return Err(WaitingRoomError::TicketAtWrongNode);
         }
 
@@ -176,34 +201,6 @@ where
         Ok(pass)
     }
 
-    fn disconnect(
-        &mut self,
-        identification: waitingroom_core::Identification,
-    ) -> Result<(), WaitingRoomError> {
-        log::info!("[NODE {}] disconnect", self.node_id);
-        match identification {
-            waitingroom_core::Identification::Ticket(ticket) => {
-                if self.local_queue.contains(ticket.identifier) {
-                    self.remove_from_queue(ticket.identifier);
-                } else {
-                    // Since we don't know whether the value is in the queue, and we cannot assume it is actually removed,
-                    // we count the number of items removed from the list (either 0 or 1) and decrement the metric by that.
-                    let removed_count =
-                        retain_with_count(&mut self.local_queue_leaving_list, |t| t != &ticket);
-                    metrics::waitingroom::to_be_let_in_count(self.node_id).dec_by(removed_count);
-                }
-            }
-            waitingroom_core::Identification::Pass(pass) => {
-                let removed_count = retain_with_count(&mut self.local_on_site_list, |p| {
-                    p.identifier != pass.identifier
-                });
-                metrics::waitingroom::on_site_count(self.node_id).dec_by(removed_count);
-            }
-        }
-
-        Ok(())
-    }
-
     fn validate_and_refresh_pass(
         &mut self,
         pass: waitingroom_core::pass::Pass,
@@ -212,10 +209,12 @@ where
         let now_time = self.time_provider.get_now_time();
 
         if pass.expiry_time < now_time {
+            // The user has been inactive for too long, and their pass expired.
             return Err(WaitingRoomError::PassExpired);
         }
 
         if pass.node_id != self.node_id {
+            // The previous node has (probably) gone down, so just to make sure we count this user as being on the site, we add them to the on site list.
             self.local_on_site_list.push(pass);
             metrics::waitingroom::on_site_count(self.node_id).inc();
         }
@@ -232,8 +231,11 @@ where
                 );
                 pass
             });
+
         match pass {
             Some(pass) => Ok(*pass),
+            // If the pass is not on the list, but it was given out at the current node, they shouldn't be on the site.
+            // I don't think this should ever be able to happen, but it might if we implement kicking users from the site.
             None => Err(WaitingRoomError::PassNotInList),
         }
     }
@@ -259,9 +261,9 @@ where
         });
         metrics::waitingroom::on_site_count(self.node_id).dec_by(removed_count);
 
-        // TODO: Replace this with the correct method when QPID is implemented.
-        // This method should not be called inside another method.
-        // self.let_users_out_of_queue(removed_count as usize)?;
+        // We *could* trigger dequeues here, since we know a number of people need to be let out of the queue,
+        // but for simplicity we won't. Instead, we'll rely on the ensure_correct_user_count function to do this.
+        // TODO(later): This could be added in the future to make the system a bit faster.
 
         // Remove expired tickets from the queue leaving list.
         let removed_count = retain_with_count(&mut self.local_queue_leaving_list, |ticket| {
@@ -274,7 +276,7 @@ where
 
     fn ensure_correct_user_count(&mut self) -> Result<(), WaitingRoomError> {
         log::info!("[NODE {}] ensure correct user count", self.node_id);
-        // Only start a count if we are the root node.
+        // Only start a count if we are the QPID root node.
         if self.qpid_parent != Some(self.node_id) {
             log::debug!("[NODE {}] not root node, not starting count", self.node_id);
             return Ok(());
@@ -292,7 +294,6 @@ where
     }
 }
 
-// Since the basic waiting room only has a single node, these are all unreachable, since they should never be called.
 impl<T, R, N> WaitingRoomMessageTriggered for DistributedWaitingRoom<T, R, N>
 where
     T: TimeProvider,
@@ -300,6 +301,7 @@ where
     N: Network<NodeToNodeMessage>,
 {
     fn receive_message(&mut self) -> Result<bool, WaitingRoomError> {
+        // This function only redirects the messages to the correct handler.
         if let Some(message) = self.network_handle.receive_message()? {
             match message.message {
                 NodeToNodeMessage::QPIDUpdateMessage(weight) => {
@@ -345,10 +347,10 @@ where
 
         Self {
             local_queue: LocalQueue::new(),
-            local_queue_leaving_list: Vec::new(),
-            local_on_site_list: Vec::new(),
+            local_queue_leaving_list: vec![],
+            local_on_site_list: vec![],
             qpid_parent: None,
-            qpid_weight_table: vec![],
+            qpid_weight_table: WeightTable::new(),
             node_id,
             time_provider,
             random_provider,
@@ -360,32 +362,32 @@ where
         }
     }
 
+    /// DO NOT CALL - Temporary testing function to overwrite the QPID parent and weight table.
+    /// This will be removed once recovery is implemented (since that's basically the same system).
     pub fn testing_overwrite_qpid(
         &mut self,
         parent: Option<NodeId>,
         weight_table: Vec<(NodeId, Time)>,
     ) {
         self.qpid_parent = parent;
-        self.qpid_weight_table = weight_table;
-    }
-
-    pub fn get_user_count(&self) -> usize {
-        self.local_queue.len()
+        self.qpid_weight_table = WeightTable::from_vec(weight_table);
     }
 
     /// Add a ticket to the local queue, incrementing the metric if the ticket type is normal.
-    pub fn enqueue(&mut self, ticket: Ticket) {
+    fn enqueue(&mut self, ticket: Ticket) {
         self.local_queue.enqueue(ticket);
         if ticket.ticket_type == TicketType::Normal {
             metrics::waitingroom::in_queue_count(self.node_id).inc();
         }
-        if ticket.join_time < self.qpid_get_from_weight_table(self.node_id) {
+        // We only call QPID insert if the current join time is less than the current QPID weight.
+        // This means that all inserts that are *not* at the front of the queue don't make any QPID messages, which is nice.
+        if ticket.join_time < self.qpid_weight_table.get(self.node_id).unwrap() {
             self.qpid_insert(ticket.join_time);
         }
     }
 
     /// Remove the element at the front of the local queue, decrementing the metric if the ticket type is normal.
-    pub fn dequeue(&mut self) -> Option<Ticket> {
+    fn dequeue(&mut self) -> Option<Ticket> {
         let element = self.local_queue.dequeue();
         if element.is_some() && element.as_ref().unwrap().ticket_type == TicketType::Normal {
             metrics::waitingroom::in_queue_count(self.node_id).dec();
@@ -393,17 +395,17 @@ where
         element
     }
 
+    /// For this, and all other QPID functions, see QPID paper and thesis for more information.
+    /// Algorithm 1 - insert
     fn qpid_insert(&mut self, weight: Time) {
-        // TODO QPID counter
-
-        self.qpid_set_in_weight_table(self.node_id, weight);
+        self.qpid_weight_table.set(self.node_id, weight);
         if let Some(qpid_parent) = self.qpid_parent {
             if qpid_parent == self.node_id {
                 return;
             }
-            let updated_weight = self.qpid_compute_weight(qpid_parent);
-            if updated_weight != self.qpid_get_from_weight_table(qpid_parent) {
-                self.qpid_set_in_weight_table(qpid_parent, updated_weight);
+            let updated_weight = self.qpid_weight_table.compute_weight(qpid_parent);
+            if updated_weight != self.qpid_weight_table.get(qpid_parent).unwrap() {
+                self.qpid_weight_table.set(qpid_parent, updated_weight);
                 self.network_handle
                     .send_message(
                         qpid_parent,
@@ -416,24 +418,25 @@ where
         }
     }
 
+    /// For this, and all other QPID functions, see QPID paper and thesis for more information.
+    /// Algorithm 2 - update
     fn qpid_handle_update(
         &mut self,
         from_node: NodeId,
         weight: Time,
     ) -> Result<(), WaitingRoomError> {
         log::info!("[NODE {}] handle update", self.node_id);
-        // TODO: QPID counter
         if self.qpid_parent.is_none() {
             return Err(WaitingRoomError::QPIDNotInitialized);
         }
         let qpid_parent = self.qpid_parent.unwrap();
 
-        self.qpid_set_in_weight_table(from_node, weight);
+        self.qpid_weight_table.set(from_node, weight);
         if self.qpid_parent == Some(self.node_id) {
-            if weight < self.qpid_get_from_weight_table(self.node_id) {
+            if weight < self.qpid_weight_table.get(self.node_id).unwrap() {
                 self.qpid_parent = Some(from_node);
-                let updated_weight = self.qpid_compute_weight(from_node);
-                self.qpid_set_in_weight_table(from_node, updated_weight);
+                let updated_weight = self.qpid_weight_table.compute_weight(from_node);
+                self.qpid_weight_table.set(from_node, updated_weight);
                 self.network_handle
                     .send_message(
                         from_node,
@@ -442,9 +445,9 @@ where
                     .unwrap()
             }
         } else {
-            let updated_weight = self.qpid_compute_weight(qpid_parent);
-            if updated_weight != self.qpid_get_from_weight_table(qpid_parent) {
-                self.qpid_set_in_weight_table(qpid_parent, updated_weight);
+            let updated_weight = self.qpid_weight_table.compute_weight(qpid_parent);
+            if updated_weight != self.qpid_weight_table.get(qpid_parent).unwrap() {
+                self.qpid_weight_table.set(qpid_parent, updated_weight);
                 self.network_handle
                     .send_message(
                         qpid_parent,
@@ -457,70 +460,9 @@ where
         Ok(())
     }
 
-    fn qpid_handle_find_root(
-        &mut self,
-        from_node: NodeId,
-        weight: Time,
-    ) -> Result<(), WaitingRoomError> {
-        log::info!("[NODE {}] handle find root", self.node_id);
-        // TODO QPID Counter
-        if self.qpid_parent.is_none() {
-            return Err(WaitingRoomError::QPIDNotInitialized);
-        }
-        let qpid_parent = self.qpid_parent.unwrap();
-        self.qpid_set_in_weight_table(from_node, weight);
-        self.qpid_parent = Some(self.qpid_get_smallest_weight_node());
-        if qpid_parent != self.node_id {
-            let updated_weight = self.qpid_compute_weight(qpid_parent);
-            self.qpid_set_in_weight_table(qpid_parent, updated_weight);
-            self.network_handle
-                .send_message(
-                    from_node,
-                    NodeToNodeMessage::QPIDUpdateMessage(updated_weight),
-                )
-                .unwrap()
-        }
-        Ok(())
-    }
-
-    fn qpid_get_from_weight_table(&self, node_id: NodeId) -> Time {
-        self.qpid_weight_table
-            .iter()
-            .find(|(id, _)| *id == node_id)
-            .map(|(_, weight)| *weight)
-            .unwrap()
-    }
-
-    fn qpid_set_in_weight_table(&mut self, node_id: NodeId, value: Time) {
-        if let Some(v) = self
-            .qpid_weight_table
-            .iter_mut()
-            .find(|(id, _)| *id == node_id)
-        {
-            v.1 = value;
-        }
-    }
-
-    fn qpid_compute_weight(&self, node_id: NodeId) -> Time {
-        self.qpid_weight_table
-            .iter()
-            .filter(|(id, _)| *id != node_id)
-            .fold(Time::MAX, |min_weight, (_, weight)| min_weight.min(*weight))
-    }
-
-    fn qpid_get_smallest_weight_node(&self) -> NodeId {
-        self.qpid_weight_table
-            .iter()
-            .min_by_key(|(_, weight)| *weight)
-            .map(|(id, _)| *id)
-            .unwrap()
-    }
-
-    fn qpid_neighbour_count(&self) -> usize {
-        self.qpid_weight_table.len() - 1 // We don't count ourselves
-    }
-
-    pub fn qpid_delete_min(&mut self) -> Result<(), WaitingRoomError> {
+    /// For this, and all other QPID functions, see QPID paper and thesis for more information.
+    /// Algorithm 3 - deleteMin
+    fn qpid_delete_min(&mut self) -> Result<(), WaitingRoomError> {
         log::info!("[NODE {}] QPID delete min", self.node_id);
         if self.qpid_parent.is_none() {
             return Err(WaitingRoomError::QPIDNotInitialized);
@@ -543,23 +485,20 @@ where
         // Update current QPID weight
         match self.local_queue.peek() {
             Some(next_ticket) => {
-                self.qpid_set_in_weight_table(self.node_id, next_ticket.join_time);
+                self.qpid_weight_table
+                    .set(self.node_id, next_ticket.join_time);
             }
             None => {
-                self.qpid_set_in_weight_table(self.node_id, Time::MAX);
+                self.qpid_weight_table.set(self.node_id, Time::MAX);
             }
         }
 
-        if self
-            .qpid_weight_table
-            .iter()
-            .any(|(_, weight)| *weight != Time::MAX)
-        {
-            let new_parent = self.qpid_get_smallest_weight_node();
+        if self.qpid_weight_table.any_not_max() {
+            let new_parent = self.qpid_weight_table.get_smallest().unwrap();
             self.qpid_parent = Some(new_parent);
             if new_parent != self.node_id {
-                let updated_weight = self.qpid_compute_weight(new_parent);
-                self.qpid_set_in_weight_table(new_parent, updated_weight);
+                let updated_weight = self.qpid_weight_table.compute_weight(new_parent);
+                self.qpid_weight_table.set(new_parent, updated_weight);
                 self.network_handle
                     .send_message(
                         new_parent,
@@ -586,15 +525,38 @@ where
         Ok(())
     }
 
-    /// Remove a specific element from the local queue by identifier, decrementing the metric if the ticket type is normal.
-    pub fn remove_from_queue(&mut self, ticket_identifier: TicketIdentifier) {
-        if let Some(ticket) = self.local_queue.remove(ticket_identifier) {
-            if ticket.ticket_type == TicketType::Normal {
-                metrics::waitingroom::in_queue_count(self.node_id).dec();
-            }
+    /// For this, and all other QPID functions, see QPID paper and thesis for more information.
+    /// Algorithm 4 - findRoot
+    fn qpid_handle_find_root(
+        &mut self,
+        from_node: NodeId,
+        weight: Time,
+    ) -> Result<(), WaitingRoomError> {
+        log::info!("[NODE {}] handle find root", self.node_id);
+
+        if self.qpid_parent.is_none() {
+            return Err(WaitingRoomError::QPIDNotInitialized);
         }
+
+        let qpid_parent = self.qpid_parent.unwrap();
+        self.qpid_weight_table.set(from_node, weight);
+        self.qpid_parent = self.qpid_weight_table.get_smallest();
+        if qpid_parent != self.node_id {
+            let updated_weight = self.qpid_weight_table.compute_weight(qpid_parent);
+            self.qpid_weight_table.set(qpid_parent, updated_weight);
+            self.network_handle
+                .send_message(
+                    from_node,
+                    NodeToNodeMessage::QPIDUpdateMessage(updated_weight),
+                )
+                .unwrap()
+        }
+        Ok(())
     }
 
+    /// The count operations are used to determine the total number of users on the site on the entire network.
+    /// This initiates a count request, which is then propagated through the network.
+    /// See thesis for more information.
     fn count_request(
         &mut self,
         from_node: NodeId,
@@ -619,8 +581,8 @@ where
         self.count_responses.clear();
 
         // If we have any neighbours, we need to ask them to participate in the count before we can respond.
-        if self.qpid_neighbour_count() > 1 || self.node_id == from_node {
-            for (node_id, _) in &self.qpid_weight_table {
+        if self.qpid_weight_table.neighbour_count() > 1 || self.node_id == from_node {
+            for node_id in &self.qpid_weight_table.all_neighbours() {
                 if *node_id != from_node {
                     self.network_handle
                         .send_message(*node_id, NodeToNodeMessage::CountRequest(count_iteration))?;
@@ -641,10 +603,7 @@ where
         Ok(())
     }
 
-    fn get_on_site_count(&self) -> usize {
-        self.local_on_site_list.len() + self.local_queue_leaving_list.len()
-    }
-
+    /// See thesis for more information.
     fn count_response(
         &mut self,
         from_node: NodeId,
@@ -672,7 +631,7 @@ where
 
         self.count_responses.push((from_node, count));
 
-        if self.count_responses.len() >= self.qpid_neighbour_count() {
+        if self.count_responses.len() >= self.qpid_weight_table.neighbour_count() {
             // We have received all responses.
             let others_count = self
                 .count_responses
@@ -701,6 +660,11 @@ where
         }
 
         Ok(())
+    }
+
+    /// Get the number of users currently on the site, including the ones that are about to leave the queue.
+    fn get_on_site_count(&self) -> usize {
+        self.local_on_site_list.len() + self.local_queue_leaving_list.len()
     }
 
     /// This function triggers an amount of QPID dequeue operations. The amount is the waiting room's minimum user count minus the current user count, provided in the parameter.
