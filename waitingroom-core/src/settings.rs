@@ -20,6 +20,13 @@ pub struct GeneralWaitingRoomSettings {
     /// The time in milliseconds until a pass expires if it is not used.
     /// Passes are refreshed automatically when they are used.
     pub pass_expiry_time: u128,
+
+    /// The interval in milliseconds between fault detection checks.
+    pub fault_detection_interval: u128,
+    /// The time in milliseconds until a node is considered faulty if it has not responded.
+    pub fault_detection_timeout: u128,
+    /// The time in milliseconds between calls of the fault detection function.
+    pub fault_detection_period: u128,
 }
 
 impl Default for GeneralWaitingRoomSettings {
@@ -31,6 +38,10 @@ impl Default for GeneralWaitingRoomSettings {
             ticket_refresh_time: 20 * 1000,
             ticket_expiry_time: 45 * 1000,
             pass_expiry_time: 120 * 1000,
+
+            fault_detection_interval: 1000,
+            fault_detection_timeout: 199,
+            fault_detection_period: 100,
         }
     }
 }

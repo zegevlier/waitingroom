@@ -19,6 +19,7 @@ use settings::GeneralWaitingRoomSettings;
 mod test;
 
 mod count;
+mod fault_detection;
 mod qpid;
 
 /// This is the waiting room implementation described in the associated thesis.
@@ -50,11 +51,13 @@ where
     /// The random provider is used to generate random numbers. This is passed in to allow for deterministic testing.
     random_provider: R,
 
+    // Also see qpid.rs
     /// The QPID parent is the ID of the parent node in the QPID tree.
     qpid_parent: Option<NodeId>,
     /// The QPID weight table is a list of all the neighbours of this node, and their current "weights".
     qpid_weight_table: WeightTable,
 
+    // Also see count.rs
     /// The count parent is the ID of the parent node in the count tree.
     /// The count tree is used to determine the total number of users on the site, which is then used to ensure the correct number of users are on site.
     count_parent: Option<NodeId>,
@@ -62,6 +65,17 @@ where
     count_iteration: Time,
     /// The count responses are used to store the responses from the neighbours in the count tree. They are aggregated sent to the parent when all responses are received.
     count_responses: Vec<(NodeId, usize)>,
+
+    /// This list includes all members of the network, also the ones that are not neighbours in the QPID network.
+    network_members: Vec<NodeId>,
+    // mst: MST - This one is not implemented yet, but should be used to store the minimum spanning tree used for QPID.
+    // This will be added when automatic recovery is implemented.
+
+    // fd is fault detection. This is in this file, as it is only two functions.
+    /// Fault detection last check is the time of the last true check. The timer function is triggered more frequently, to detect faults faster.
+    fd_last_check_time: Time,
+    /// Fault detection last check node is the node that last checkd.
+    fd_last_check_node: Option<NodeId>,
 }
 
 impl<T, R, N> WaitingRoomUserTriggered for DistributedWaitingRoom<T, R, N>
@@ -291,6 +305,43 @@ where
         // This will start the count process from this node.
         self.count_request(self.node_id, iteration)
     }
+
+    fn fault_detection(&mut self) -> Result<(), WaitingRoomError> {
+        log::info!("[NODE {}] fault detection", self.node_id);
+        let now_time = self.time_provider.get_now_time();
+
+        // If we have a last check node, and we haven't had a response after the timeout, we consider the node to be down.
+        if let Some(last_check_node) = self.fd_last_check_node {
+            if now_time - self.fd_last_check_time > self.settings.fault_detection_timeout {
+                log::warn!("[NODE {}] node {} is down", self.node_id, last_check_node);
+                // TODO: Implement recovery.
+                // We set the last check node to None.
+                self.fd_last_check_node = None;
+            }
+            // If it's not been too long yet, we do nothing.
+        }
+        // Else, if we don't have a last check node, we only check a node if it's been long enough since the last check.
+        else if self.settings.fault_detection_interval < now_time - self.fd_last_check_time {
+            // We pick a random node to check.
+            let node_to_check = self
+                .random_provider
+                .get_random_element_except(&self.network_members, &self.node_id);
+
+            log::debug!("[NODE {}] checking node {}", self.node_id, node_to_check);
+            // This is the message it needs to respond to within the timeout.
+            self.network_handle
+                .send_message(
+                    node_to_check,
+                    NodeToNodeMessage::FaultDetectionRequest(now_time),
+                )
+                .unwrap();
+            // We update the last check node and time.
+            self.fd_last_check_node = Some(node_to_check);
+            self.fd_last_check_time = now_time;
+        }
+
+        Ok(())
+    }
 }
 
 impl<T, R, N> WaitingRoomMessageTriggered for DistributedWaitingRoom<T, R, N>
@@ -315,6 +366,12 @@ where
                 }
                 NodeToNodeMessage::CountResponse(count_iteration, count) => {
                     self.count_response(message.from_node, count_iteration, count)
+                }
+                NodeToNodeMessage::FaultDetectionRequest(check_id) => {
+                    self.fault_detection_request(message.from_node, check_id)
+                }
+                NodeToNodeMessage::FaultDetectionResponse(check_id) => {
+                    self.fault_detection_response(message.from_node, check_id)
                 }
             }?;
             Ok(true)
@@ -358,6 +415,9 @@ where
             count_parent: None,
             count_iteration: Time::MIN,
             count_responses: vec![],
+            network_members: vec![node_id],
+            fd_last_check_time: Time::MIN,
+            fd_last_check_node: None,
         }
     }
 
@@ -370,6 +430,7 @@ where
     ) {
         self.qpid_parent = parent;
         self.qpid_weight_table = WeightTable::from_vec(weight_table);
+        self.network_members = self.qpid_weight_table.all_neighbours();
     }
 
     /// Add a ticket to the local queue, incrementing the metric if the ticket type is normal.

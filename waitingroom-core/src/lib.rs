@@ -55,12 +55,19 @@ pub struct CheckInResponse {
 pub trait WaitingRoomTimerTriggered {
     /// This function is used to clean up expired tickets and passes.
     /// When a pass is invalidated, a new user is automatically let in.
+    /// This function should be called somewhat regularly, eg. every 10 seconds.
     fn cleanup(&mut self) -> Result<(), WaitingRoomError>;
 
     /// This function is used to ensure that the correct number of users are on the site.
     /// If there are less than the minimum number of users, more users are let in.
     /// If there are more than the maximum number of users, users are not let in a number of times.
+    /// This function should be called every Xth second, at roughly the same time on all nodes (preferably within a single network request's latency).
     fn ensure_correct_user_count(&mut self) -> Result<(), WaitingRoomError>;
+
+    /// Calling this function will trigger the fault detection mechanism.
+    /// This function should be triggered frequently (eg. every 100ms). It can handle being called too frequently with little overhead.
+    /// The fault detection mechanism is used to detect when a node has failed and remove it from the network.
+    fn fault_detection(&mut self) -> Result<(), WaitingRoomError>;
 }
 
 /// These functions are able to be triggered by messages from nodes,
