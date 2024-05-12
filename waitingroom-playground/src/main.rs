@@ -3,12 +3,11 @@
 use waitingroom_core::{
     network::{DummyNetwork, Latency},
     random::DeterministicRandomProvider,
+    settings::GeneralWaitingRoomSettings,
     time::{DummyTimeProvider, Time},
     NodeId, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered, WaitingRoomUserTriggered,
 };
-use waitingroom_distributed::{
-    messages::NodeToNodeMessage, DistributedWaitingRoom, GeneralWaitingRoomSettings,
-};
+use waitingroom_distributed::{messages::NodeToNodeMessage, DistributedWaitingRoom};
 
 type Node = DistributedWaitingRoom<
     DummyTimeProvider,
