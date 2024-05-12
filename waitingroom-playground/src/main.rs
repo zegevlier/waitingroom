@@ -24,6 +24,9 @@ fn main() {
         ticket_refresh_time: 6000,
         ticket_expiry_time: 15000,
         pass_expiry_time: 6000,
+        fault_detection_interval: 1000,
+        fault_detection_timeout: 199,
+        fault_detection_period: 100,
     };
 
     log::info!("Instantiating dummy time and network");

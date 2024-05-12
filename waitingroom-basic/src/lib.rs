@@ -241,6 +241,10 @@ where
 
         Ok(())
     }
+
+    fn fault_detection(&mut self) -> Result<(), WaitingRoomError> {
+        unimplemented!("Fault detection is not implemented for the basic waiting room.")
+    }
 }
 
 // Since the basic waiting room only has a single node, these are all unreachable, since they should never be called.

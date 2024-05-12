@@ -6,8 +6,8 @@ This is a waiting room implementation as part of my Bachelor's thesis in Computi
 This contains some things that should happen soon™. These are all things I intend to do before the end of my thesis, and they're roughly in order of priority. I will split them up into smaller tasks as I go along.
 - [ ] Finish writing the distributed waiting room simulation:
     - [ ] Make the letting out of users trigger when it hasn't happened yet and a new root is selected.
-    - [ ] Better document the recently added code
-    - [ ] Detect node failures automatically (using simplified SWIM)
+    - [x] Better document the recently added code
+    - [x] Detect node failures automatically (using simplified SWIM)
     - [ ] Add recovery from node failures (TODO: Split)
 - [ ] Write automated deterministic testing system (TODO: Split)
 - [ ] Write benchmarking skeleton and run benchmarks (TODO: Split)

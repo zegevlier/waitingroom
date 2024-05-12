@@ -7,4 +7,6 @@ pub enum NodeToNodeMessage {
     QPIDFindRootMessage(Time),
     CountRequest(Time),
     CountResponse(Time, usize),
+    FaultDetectionRequest(Time),
+    FaultDetectionResponse(Time),
 }

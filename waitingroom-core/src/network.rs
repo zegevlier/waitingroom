@@ -157,6 +157,10 @@ where
             Ok(None)
         }
     }
+
+    pub fn total_messages_in_network(&self) -> usize {
+        self.messages.borrow().len()
+    }
 }
 
 pub struct DummyNetworkHandle<M>
