@@ -74,7 +74,7 @@ where
     // fd is fault detection. This is in this file, as it is only two functions.
     /// Fault detection last check is the time of the last true check. The timer function is triggered more frequently, to detect faults faster.
     fd_last_check_time: Time,
-    /// Fault detection last check node is the node that last checkd.
+    /// Fault detection last check node is the node that last checked.
     fd_last_check_node: Option<NodeId>,
 }
 
@@ -98,7 +98,7 @@ where
             self.node_id,
             ticket.identifier
         );
-        self.enqueue(ticket);
+        self.enqueue(ticket)?;
         Ok(ticket)
     }
 
@@ -116,7 +116,7 @@ where
             // This happens when the user tries to check in at a different node.
             // This is expected when the previous node went down. The user will need to re-join the queue at the new node.
             // Since, when we get here, the ticket is already confirmed to be valid, we can just add the ticket to the queue.
-            self.enqueue(ticket);
+            self.enqueue(ticket)?;
         }
 
         // TODO: Make a better estimate of the position. A super simple way would be to multiply by the number of nodes, but that kinda sucks.
@@ -434,7 +434,7 @@ where
     }
 
     /// Add a ticket to the local queue, incrementing the metric if the ticket type is normal.
-    fn enqueue(&mut self, ticket: Ticket) {
+    fn enqueue(&mut self, ticket: Ticket) -> Result<(), WaitingRoomError> {
         self.local_queue.enqueue(ticket);
         if ticket.ticket_type == TicketType::Normal {
             metrics::waitingroom::in_queue_count(self.node_id).inc();
@@ -442,8 +442,9 @@ where
         // We only call QPID insert if the current join time is less than the current QPID weight.
         // This means that all inserts that are *not* at the front of the queue don't make any QPID messages, which is nice.
         if ticket.join_time < self.qpid_weight_table.get(self.node_id).unwrap() {
-            self.qpid_insert(ticket.join_time);
+            self.qpid_insert(ticket.join_time)?;
         }
+        Ok(())
     }
 
     /// Remove the element at the front of the local queue, decrementing the metric if the ticket type is normal.
@@ -477,7 +478,7 @@ where
                 count - self.settings.max_user_count
             );
             for _ in 0..(count - self.settings.max_user_count) {
-                self.enqueue(Ticket::new_drain(self.node_id));
+                self.enqueue(Ticket::new_drain(self.node_id))?;
             }
         }
 
