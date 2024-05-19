@@ -3,15 +3,20 @@ use waitingroom_core::{time::Time, NodeId};
 #[derive(Debug)]
 pub struct WeightTable {
     table: Vec<(NodeId, Time)>,
+    /// The ID of the node that this weight table belongs to
+    node_id: NodeId,
 }
 
 impl WeightTable {
-    pub fn new() -> Self {
-        WeightTable { table: vec![] }
+    pub fn new(node_id: NodeId) -> Self {
+        WeightTable {
+            table: vec![],
+            node_id,
+        }
     }
 
-    pub fn from_vec(table: Vec<(NodeId, Time)>) -> Self {
-        WeightTable { table }
+    pub fn from_vec(node_id: NodeId, table: Vec<(NodeId, Time)>) -> Self {
+        WeightTable { table, node_id }
     }
 
     pub fn get(&self, node_id: NodeId) -> Option<Time> {
@@ -32,8 +37,10 @@ impl WeightTable {
     pub fn compute_weight(&self, node_id: NodeId) -> Time {
         self.table
             .iter()
-            .filter(|(id, _)| *id != node_id)
-            .fold(Time::MAX, |min_weight, (_, weight)| min_weight.min(*weight))
+            .filter(|(id, _)| node_id == self.node_id || *id != node_id)
+            .map(|(_, time)| *time)
+            .min()
+            .unwrap_or(Time::MAX)
     }
 
     pub fn get_smallest(&self) -> Option<NodeId> {
@@ -53,5 +60,9 @@ impl WeightTable {
 
     pub fn all_neighbours(&self) -> Vec<NodeId> {
         self.table.iter().map(|(id, _)| *id).collect()
+    }
+
+    pub fn all_weights(&self) -> Vec<(NodeId, Time)> {
+        self.table.clone()
     }
 }

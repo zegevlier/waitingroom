@@ -406,7 +406,7 @@ where
             local_queue_leaving_list: vec![],
             local_on_site_list: vec![],
             qpid_parent: None,
-            qpid_weight_table: WeightTable::new(),
+            qpid_weight_table: WeightTable::new(node_id),
             node_id,
             time_provider,
             random_provider,
@@ -429,7 +429,7 @@ where
         weight_table: Vec<(NodeId, Time)>,
     ) {
         self.qpid_parent = parent;
-        self.qpid_weight_table = WeightTable::from_vec(weight_table);
+        self.qpid_weight_table = WeightTable::from_vec(self.node_id, weight_table);
         self.network_members = self.qpid_weight_table.all_neighbours();
     }
 

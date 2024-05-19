@@ -17,25 +17,31 @@ where
 {
     /// For this, and all other QPID functions, see QPID paper and thesis for more information.
     /// Algorithm 1 - insert
-    pub(super) fn qpid_insert(&mut self, weight: Time) {
+    pub(super) fn qpid_insert(&mut self, weight: Time) -> Result<(), WaitingRoomError> {
+        if self.qpid_parent.is_none() {
+            return Err(WaitingRoomError::QPIDNotInitialized);
+        }
+
+        let old_w_v_parent_v = self
+            .qpid_weight_table
+            .compute_weight(self.qpid_parent.unwrap());
         self.qpid_weight_table.set(self.node_id, weight);
-        if let Some(qpid_parent) = self.qpid_parent {
-            if qpid_parent == self.node_id {
-                return;
-            }
-            let updated_weight = self.qpid_weight_table.compute_weight(qpid_parent);
-            if updated_weight != self.qpid_weight_table.get(qpid_parent).unwrap() {
-                self.qpid_weight_table.set(qpid_parent, updated_weight);
+
+        if self.qpid_parent.unwrap() != self.node_id {
+            let new_w_v_parent_v = self
+                .qpid_weight_table
+                .compute_weight(self.qpid_parent.unwrap());
+            if new_w_v_parent_v != old_w_v_parent_v {
                 self.network_handle
                     .send_message(
-                        qpid_parent,
-                        NodeToNodeMessage::QPIDUpdateMessage(updated_weight),
+                        self.qpid_parent.unwrap(),
+                        NodeToNodeMessage::QPIDUpdateMessage(new_w_v_parent_v),
                     )
                     .unwrap();
             }
-        } else {
-            log::warn!("QPID parent is None when trying to insert");
         }
+
+        Ok(())
     }
 
     /// For this, and all other QPID functions, see QPID paper and thesis for more information.
@@ -49,29 +55,28 @@ where
         if self.qpid_parent.is_none() {
             return Err(WaitingRoomError::QPIDNotInitialized);
         }
-        let qpid_parent = self.qpid_parent.unwrap();
+        let old_w_v_parent_v = self
+            .qpid_weight_table
+            .compute_weight(self.qpid_parent.unwrap());
 
         self.qpid_weight_table.set(from_node, weight);
-        if self.qpid_parent == Some(self.node_id) {
+        if self.qpid_parent.unwrap() == self.node_id {
             if weight < self.qpid_weight_table.get(self.node_id).unwrap() {
                 self.qpid_parent = Some(from_node);
-                let updated_weight = self.qpid_weight_table.compute_weight(from_node);
-                self.qpid_weight_table.set(from_node, updated_weight);
+                let w_v_u = self.qpid_weight_table.compute_weight(from_node);
                 self.network_handle
-                    .send_message(
-                        from_node,
-                        NodeToNodeMessage::QPIDFindRootMessage(updated_weight),
-                    )
+                    .send_message(from_node, NodeToNodeMessage::QPIDFindRootMessage(w_v_u))
                     .unwrap()
             }
         } else {
-            let updated_weight = self.qpid_weight_table.compute_weight(qpid_parent);
-            if updated_weight != self.qpid_weight_table.get(qpid_parent).unwrap() {
-                self.qpid_weight_table.set(qpid_parent, updated_weight);
+            let new_w_v_parent_v = self
+                .qpid_weight_table
+                .compute_weight(self.qpid_parent.unwrap());
+            if new_w_v_parent_v != old_w_v_parent_v {
                 self.network_handle
                     .send_message(
-                        qpid_parent,
-                        NodeToNodeMessage::QPIDUpdateMessage(updated_weight),
+                        self.qpid_parent.unwrap(),
+                        NodeToNodeMessage::QPIDUpdateMessage(new_w_v_parent_v),
                     )
                     .unwrap()
             }
@@ -87,11 +92,10 @@ where
         if self.qpid_parent.is_none() {
             return Err(WaitingRoomError::QPIDNotInitialized);
         }
-        let qpid_parent = self.qpid_parent.unwrap();
 
-        if qpid_parent != self.node_id {
+        if self.qpid_parent.unwrap() != self.node_id {
             self.network_handle
-                .send_message(qpid_parent, NodeToNodeMessage::QPIDDeleteMin)
+                .send_message(self.qpid_parent.unwrap(), NodeToNodeMessage::QPIDDeleteMin)
                 .unwrap();
             return Ok(());
         }
@@ -118,7 +122,6 @@ where
             self.qpid_parent = Some(new_parent);
             if new_parent != self.node_id {
                 let updated_weight = self.qpid_weight_table.compute_weight(new_parent);
-                self.qpid_weight_table.set(new_parent, updated_weight);
                 self.network_handle
                     .send_message(
                         new_parent,
@@ -158,16 +161,17 @@ where
             return Err(WaitingRoomError::QPIDNotInitialized);
         }
 
-        let qpid_parent = self.qpid_parent.unwrap();
         self.qpid_weight_table.set(from_node, weight);
         self.qpid_parent = self.qpid_weight_table.get_smallest();
-        if qpid_parent != self.node_id {
-            let updated_weight = self.qpid_weight_table.compute_weight(qpid_parent);
-            self.qpid_weight_table.set(qpid_parent, updated_weight);
+        if self.qpid_parent.unwrap() != self.node_id {
+            let w_v_parent_v = self
+                .qpid_weight_table
+                .compute_weight(self.qpid_parent.unwrap());
+
             self.network_handle
                 .send_message(
-                    from_node,
-                    NodeToNodeMessage::QPIDUpdateMessage(updated_weight),
+                    self.qpid_parent.unwrap(),
+                    NodeToNodeMessage::QPIDFindRootMessage(w_v_parent_v),
                 )
                 .unwrap()
         }

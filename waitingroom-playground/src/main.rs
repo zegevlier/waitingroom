@@ -5,7 +5,7 @@ use waitingroom_core::{
     random::DeterministicRandomProvider,
     settings::GeneralWaitingRoomSettings,
     time::{DummyTimeProvider, Time},
-    NodeId, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered, WaitingRoomUserTriggered,
+    WaitingRoomMessageTriggered, WaitingRoomUserTriggered,
 };
 use waitingroom_distributed::{messages::NodeToNodeMessage, DistributedWaitingRoom};
 
@@ -36,10 +36,17 @@ fn main() {
 
     let mut nodes = vec![];
 
-    let node_count = 2;
-    log::info!("Creating {} waitingroom nodes", node_count);
-    let init_weight_table: Vec<(NodeId, Time)> = (0..node_count).map(|v| (v, Time::MAX)).collect();
-    for node_id in 0..node_count {
+    let node_configs = [
+        (0, vec![0, 1]),       // 0
+        (0, vec![0, 1, 2]),    // 1
+        (1, vec![1, 2, 3]),    // 2
+        (2, vec![2, 3, 4, 5]), // 3
+        (3, vec![3, 4]),       // 4
+        (3, vec![3, 5]),       // 5
+    ];
+
+    log::info!("Creating {} waitingroom nodes", node_configs.len());
+    for (node_id, (parent, neighbour_config)) in node_configs.iter().enumerate() {
         let mut node = DistributedWaitingRoom::new(
             settings,
             node_id,
@@ -47,75 +54,37 @@ fn main() {
             random_provider.clone(),
             dummy_network.clone(),
         );
-        node.testing_overwrite_qpid(Some(1), init_weight_table.clone());
+        node.testing_overwrite_qpid(
+            Some(*parent),
+            neighbour_config.iter().map(|v| (*v, Time::MAX)).collect(),
+        );
         nodes.push(node);
     }
 
-    let ticket = nodes[0].join().unwrap();
+    dummy_time_provider.increase_by(2);
+    let _ticket2 = nodes[5].join().unwrap();
+    dummy_time_provider.increase_by(1);
+    let _ticket3 = nodes[2].join().unwrap();
+    dummy_time_provider.increase_by(1);
+    let _ticket4 = nodes[1].join().unwrap();
+    dummy_time_provider.increase_by(1);
+    let _ticket5 = nodes[3].join().unwrap();
+    dummy_time_provider.increase_by(1);
+    let _ticket6 = nodes[0].join().unwrap();
+    dummy_time_provider.increase_by(1);
+    let _ticket7 = nodes[4].join().unwrap();
 
     process_messages(&mut nodes);
 
-    dummy_time_provider.increase_by(10);
-
-    let ticket2 = nodes[1].join().unwrap();
-
-    process_messages(&mut nodes);
-
-    nodes.iter_mut().for_each(|node| {
-        node.ensure_correct_user_count().unwrap();
-    });
-
-    process_messages(&mut nodes);
-
-    let checkin_result = nodes[ticket.node_id].check_in(ticket).unwrap();
-
-    assert!(checkin_result.position_estimate == 0);
-
-    let checkin_result2 = nodes[ticket2.node_id].check_in(ticket2).unwrap();
-
-    assert!(checkin_result2.position_estimate == 1);
-
-    let pass = nodes[0].leave(ticket).unwrap();
-
-    let _pass = if let Ok(new_pass) = nodes[0].validate_and_refresh_pass(pass) {
-        new_pass
-    } else {
-        panic!("Invalid pass!");
-    };
-
-    dummy_time_provider.increase_by(300);
-
-    nodes.iter_mut().for_each(|node| {
-        node.ensure_correct_user_count().unwrap();
-    });
-
-    process_messages(&mut nodes);
-
-    // Now, the other user SHOULDN'T be able to check in, because the first user is still on the site.
-
-    let checkin_result2 = nodes[ticket2.node_id].check_in(ticket2).unwrap();
-
-    assert!(checkin_result2.position_estimate == 1);
-
-    let new_ticket = checkin_result2.new_ticket;
-
-    // Now, we expire the pass and the first user should be able to check in again.
-    dummy_time_provider.increase_by(6001);
-
-    // First we need to do a cleanup, otherwise the pass won't be invalidated.
-    nodes.iter_mut().for_each(|node| {
-        node.cleanup().unwrap();
-    });
-
-    nodes.iter_mut().for_each(|node| {
-        node.ensure_correct_user_count().unwrap();
-    });
-
-    process_messages(&mut nodes);
-
-    let checkin_result2 = nodes[new_ticket.node_id].check_in(new_ticket).unwrap();
-
-    assert!(checkin_result2.position_estimate == 0);
+    log::info!("Debug printing QPID states");
+    // for (i, node) in nodes.iter().enumerate() {
+    //     println!("Node {}\nQPID parent: {}\t\t Self weight: {}", i, node.qpid_parent, node.qpid_self_weight);
+    //     println!("Weight table:");
+    //     println!("Neighbour\t\t Weight")
+    //     for (neighbour, weight) in node.qpid_weight_table.iter() {
+    //         println!("{}\t\t{}", neighbour, weight);
+    //     }
+    // }
 
     log::info!("Done!");
 }
