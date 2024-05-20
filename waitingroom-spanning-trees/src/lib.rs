@@ -3,6 +3,7 @@ use waitingroom_core::NodeId;
 type AdjacencyList = Vec<(NodeId, Vec<usize>)>;
 type Edge = (NodeId, NodeId);
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SpanningTree {
     adjacency_list: AdjacencyList,
 }
@@ -49,6 +50,10 @@ impl SpanningTree {
 
         // Reconnect the graph until there is only one connected component.
         self.reconnect()
+    }
+
+    pub fn get_node_list(&self) -> Vec<NodeId> {
+        self.adjacency_list.iter().map(|(id, _)| *id).collect()
     }
 
     /// Reconnect all nodes in the graph until there is only one connected component.
@@ -112,7 +117,7 @@ impl SpanningTree {
     }
 
     /// Get a reference to the element in the adjacency list with the given node ID.
-    fn get_node(&self, node_id: NodeId) -> Option<&Vec<NodeId>> {
+    pub fn get_node(&self, node_id: NodeId) -> Option<&Vec<NodeId>> {
         self.adjacency_list
             .iter()
             .find(|(id, _)| *id == node_id)

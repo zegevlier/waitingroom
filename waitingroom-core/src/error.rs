@@ -7,6 +7,7 @@ pub enum WaitingRoomError {
     PassExpired,
     PassNotInList,
     QPIDNotInitialized,
+    FaultFalsePositive,
     NetworkError(NetworkError),
 }
 
@@ -20,6 +21,7 @@ impl std::fmt::Display for WaitingRoomError {
             WaitingRoomError::PassExpired => write!(f, "Pass expired"),
             WaitingRoomError::PassNotInList => write!(f, "Pass not in list"),
             WaitingRoomError::QPIDNotInitialized => write!(f, "QPID not initialized"),
+            WaitingRoomError::FaultFalsePositive => write!(f, "Fault detection false positive"),
             WaitingRoomError::NetworkError(err) => write!(f, "Network Error: {:?}", err),
         }
     }

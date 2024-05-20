@@ -2911,6 +2911,7 @@ dependencies = [
  "test-log",
  "waitingroom-core",
  "waitingroom-local-queue",
+ "waitingroom-spanning-trees",
 ]
 
 [[package]]

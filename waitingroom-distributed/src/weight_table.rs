@@ -34,6 +34,10 @@ impl WeightTable {
         }
     }
 
+    pub fn remove(&mut self, node_id: NodeId) {
+        self.table.retain(|(id, _)| *id != node_id);
+    }
+
     pub fn compute_weight(&self, node_id: NodeId) -> Time {
         self.table
             .iter()
