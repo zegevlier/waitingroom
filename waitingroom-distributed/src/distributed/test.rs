@@ -176,7 +176,7 @@ fn check_letting_users_out_of_queue_on_timer() {
     process_messages(&mut nodes, 10);
 
     nodes.iter_mut().for_each(|node| {
-        node.ensure_correct_user_count().unwrap();
+        node.eviction().unwrap();
     });
 
     process_messages(&mut nodes, 10);
@@ -200,7 +200,7 @@ fn check_letting_users_out_of_queue_on_timer() {
     dummy_time_provider.increase_by(300);
 
     nodes.iter_mut().for_each(|node| {
-        node.ensure_correct_user_count().unwrap();
+        node.eviction().unwrap();
     });
 
     process_messages(&mut nodes, 10);
@@ -222,7 +222,7 @@ fn check_letting_users_out_of_queue_on_timer() {
     });
 
     nodes.iter_mut().for_each(|node| {
-        node.ensure_correct_user_count().unwrap();
+        node.eviction().unwrap();
     });
 
     process_messages(&mut nodes, 10);
@@ -350,14 +350,7 @@ fn simple_fault_test() {
 fn multi_node() {
     // This test is a regression test for a bug that was found in the distributed waiting room.
     let settings = GeneralWaitingRoomSettings {
-        min_user_count: 1,
-        max_user_count: 1,
-        ticket_refresh_time: 6000,
-        ticket_expiry_time: 15000,
-        pass_expiry_time: 6000,
-        fault_detection_interval: 1000,
-        fault_detection_timeout: 199,
-        fault_detection_period: 100,
+        ..Default::default()
     };
 
     log::info!("Instantiating dummy time and network");
@@ -421,7 +414,7 @@ fn multi_node() {
             process_messages(&mut nodes, 100),
             "Stuck in an infinite message loop"
         );
-    
+
         debug_print_qpid_info_for_nodes(nodes.as_slice());
         verify_qpid_invariant(nodes.as_slice());
     }
@@ -464,4 +457,67 @@ fn verify_qpid_invariant(nodes: &[Node]) {
             v_id
         );
     }
+}
+
+#[test]
+fn mid_eviction_time_root_change() {
+    let settings = GeneralWaitingRoomSettings {
+        eviction_interval: 1000,
+        min_user_count: 1,
+        max_user_count: 1,
+        ..Default::default()
+    };
+
+    log::info!("Instantiating dummy time and network");
+    let dummy_time_provider = DummyTimeProvider::new();
+    let dummy_random_provider = DeterministicRandomProvider::new(1);
+    let dummy_network = DummyNetwork::new(dummy_time_provider.clone(), Latency::Fixed(20)); // 20ms latency
+
+    let mut nodes = vec![];
+
+    let node_count = 2;
+    log::info!("Creating {} waitingroom nodes", node_count);
+    let init_weight_table: Vec<(NodeId, Time)> = (0..node_count).map(|v| (v, Time::MAX)).collect();
+    for node_id in 0..node_count {
+        let mut node = DistributedWaitingRoom::new(
+            settings,
+            node_id,
+            dummy_time_provider.clone(),
+            dummy_random_provider.clone(),
+            dummy_network.clone(),
+        );
+        node.testing_overwrite_qpid(Some(1), init_weight_table.clone());
+        nodes.push(node);
+    }
+
+    dummy_time_provider.increase_by(1000);
+    // Now an eviction happens.
+    log::debug!("Doing first eviction");
+    nodes[0].eviction().unwrap();
+    nodes[1].eviction().unwrap();
+    // This eviction will do nothing.
+    process_messages(&mut nodes, 10);
+    
+    // Now we skip ahead until just before we would do another eviction.
+    dummy_time_provider.increase_by(1000 - 30);
+    // We first get it into a state where the root is mid-change.
+    let ticket = nodes[1].join().unwrap(); // We do this by having the user join node 1. Since the current root is node 0, this will trigger a root change.
+    dummy_time_provider.increase_by(20); // We wait until the first message arrives.
+    nodes[0].receive_message().unwrap(); // We process the message that triggers the root change.
+    // Now, we don't wait until the second message arrives, but instead we trigger the eviction.
+    dummy_time_provider.increase_by(10);
+    log::debug!("Doing second eviction");
+    nodes[0].eviction().unwrap();
+    nodes[1].eviction().unwrap();
+    // Now we wait until the message arrives, then we check if we're doing an eviction on node 1.
+    dummy_time_provider.increase_by(10);
+    process_messages(&mut nodes, 10);
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+    // Now, we should have done an eviction on node 1.
+    // We check this by checking if the user can leave.
+    let position = nodes[1].check_in(ticket).unwrap().position_estimate;
+    assert_eq!(position, 0, "User should be first in line, but is at position {}", position);
 }

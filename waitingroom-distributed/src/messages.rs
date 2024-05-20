@@ -4,7 +4,7 @@ use waitingroom_core::time::Time;
 pub enum NodeToNodeMessage {
     QPIDUpdateMessage(Time),
     QPIDDeleteMin,
-    QPIDFindRootMessage(Time),
+    QPIDFindRootMessage { weight: Time, last_eviction: Time },
     CountRequest(Time),
     CountResponse(Time, usize),
     FaultDetectionRequest(Time),

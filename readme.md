@@ -5,7 +5,7 @@ This is a waiting room implementation as part of my Bachelor's thesis in Computi
 ## Current to-do list
 This contains some things that should happen soon™. These are all things I intend to do before the end of my thesis, and they're roughly in order of priority. I will split them up into smaller tasks as I go along.
 - [ ] Finish writing the distributed waiting room simulation:
-    - [ ] Make the letting out of users trigger when it hasn't happened yet and a new root is selected.
+    - [x] Make the letting out of users trigger when it hasn't happened yet and a new root is selected.
     - [ ] Implement Round-Robin Probe Target Selection.
     - [ ] Implement running eviction when a new root is selected.
     - [x] Better document the recently added code

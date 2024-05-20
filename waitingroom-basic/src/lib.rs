@@ -222,7 +222,7 @@ where
         Ok(())
     }
 
-    fn ensure_correct_user_count(&mut self) -> Result<(), WaitingRoomError> {
+    fn eviction(&mut self) -> Result<(), WaitingRoomError> {
         // We use this user count, because people that are about to leave the queue
         // should be counted as users on site.
         let user_count = self.on_site_list.len() + self.queue_leaving_list.len();
