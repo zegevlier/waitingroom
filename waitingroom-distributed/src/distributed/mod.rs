@@ -76,6 +76,8 @@ where
     fd_last_check_time: Time,
     /// Fault detection last check node is the node that last checked.
     fd_last_check_node: Option<NodeId>,
+    /// The fault detection queue contains the nodes that need to be checked. When it is empty, it gets refilled with all nodes in a random order.
+    fd_queue: Vec<NodeId>,
 }
 
 impl<T, R, N> WaitingRoomUserTriggered for DistributedWaitingRoom<T, R, N>
@@ -323,9 +325,13 @@ where
         // Else, if we don't have a last check node, we only check a node if it's been long enough since the last check.
         else if self.settings.fault_detection_interval < now_time - self.fd_last_check_time {
             // We pick a random node to check.
-            let node_to_check = self
-                .random_provider
-                .get_random_element_except(&self.network_members, &self.node_id);
+            let node_to_check = self.fd_queue.pop().unwrap_or_else(|| {
+                let mut nodes = self.network_members.clone();
+                // Remove ourselves from the list.
+                nodes.retain(|&n| n != self.node_id);
+                self.random_provider.shuffle(&mut nodes);
+                nodes.pop().unwrap()
+            });
 
             log::debug!("[NODE {}] checking node {}", self.node_id, node_to_check);
             // This is the message it needs to respond to within the timeout.
@@ -419,6 +425,7 @@ where
             network_members: vec![node_id],
             fd_last_check_time: Time::MIN,
             fd_last_check_node: None,
+            fd_queue: vec![]
         }
     }
 
