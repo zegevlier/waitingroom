@@ -1,6 +1,6 @@
 use waitingroom_core::{
     network::{DummyNetwork, Latency},
-    random::DeterministicRandomProvider,
+    random::{DeterministicRandomProvider, RandomProvider},
     settings::GeneralWaitingRoomSettings,
     time::{DummyTimeProvider, Time},
     NodeId, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered, WaitingRoomUserTriggered,
@@ -422,8 +422,8 @@ fn multi_node() {
 
 fn debug_print_qpid_info_for_nodes(nodes: &[Node]) {
     log::info!("Debug printing QPID states");
-    for (i, node) in nodes.iter().enumerate() {
-        log::info!("Node {}\nQPID parent: {:?}", i, node.qpid_parent);
+    for node in nodes.iter() {
+        log::info!("Node {}\nQPID parent: {:?}", node.node_id, node.qpid_parent);
         log::info!("Weight table:");
         log::info!("Neighbour\t\tWeight");
         for (neighbour, weight) in node.qpid_weight_table.all_weights() {
@@ -433,19 +433,19 @@ fn debug_print_qpid_info_for_nodes(nodes: &[Node]) {
 }
 
 fn verify_qpid_invariant(nodes: &[Node]) {
-    for (v_id, v) in nodes.iter().enumerate() {
+    for v in nodes.iter() {
         let parent_v = v.qpid_parent.unwrap();
 
         let w_v_parent_v = v.qpid_weight_table.compute_weight(parent_v);
 
-        let w_v = v.qpid_weight_table.get(v_id).unwrap();
+        let w_v = v.qpid_weight_table.get(v.node_id).unwrap();
 
         let mut min_weight = w_v;
 
         // Now we look at all nodes, check if their parent is the current node, and if so, check if their weight is less than the parent weight
         for x in nodes.iter() {
-            if x.qpid_parent.unwrap() == v_id {
-                let w_x_v = x.qpid_weight_table.compute_weight(v_id);
+            if x.qpid_parent.unwrap() == v.node_id {
+                let w_x_v = x.qpid_weight_table.compute_weight(v.node_id);
                 min_weight = min_weight.min(w_x_v);
             }
         }
@@ -454,9 +454,19 @@ fn verify_qpid_invariant(nodes: &[Node]) {
         assert_eq!(
             min_weight, w_v_parent_v,
             "Invariant failed for node {}",
-            v_id
+            v.node_id
         );
     }
+}
+
+fn ensure_only_single_root(nodes: &[Node]) {
+    let mut root_count = 0;
+    for node in nodes {
+        if node.qpid_parent == Some(node.node_id) {
+            root_count += 1;
+        }
+    }
+    assert_eq!(root_count, 1, "There should be exactly one root node");
 }
 
 #[test]
@@ -497,14 +507,14 @@ fn mid_eviction_time_root_change() {
     nodes[1].eviction().unwrap();
     // This eviction will do nothing.
     process_messages(&mut nodes, 10);
-    
+
     // Now we skip ahead until just before we would do another eviction.
     dummy_time_provider.increase_by(1000 - 30);
     // We first get it into a state where the root is mid-change.
     let ticket = nodes[1].join().unwrap(); // We do this by having the user join node 1. Since the current root is node 0, this will trigger a root change.
     dummy_time_provider.increase_by(20); // We wait until the first message arrives.
     nodes[0].receive_message().unwrap(); // We process the message that triggers the root change.
-    // Now, we don't wait until the second message arrives, but instead we trigger the eviction.
+                                         // Now, we don't wait until the second message arrives, but instead we trigger the eviction.
     dummy_time_provider.increase_by(10);
     log::debug!("Doing second eviction");
     nodes[0].eviction().unwrap();
@@ -519,5 +529,191 @@ fn mid_eviction_time_root_change() {
     // Now, we should have done an eviction on node 1.
     // We check this by checking if the user can leave.
     let position = nodes[1].check_in(ticket).unwrap().position_estimate;
-    assert_eq!(position, 0, "User should be first in line, but is at position {}", position);
+    assert_eq!(
+        position, 0,
+        "User should be first in line, but is at position {}",
+        position
+    );
+}
+
+#[test]
+fn membership_basic_add_remove() {
+    let settings = GeneralWaitingRoomSettings {
+        ..Default::default()
+    };
+
+    log::info!("Instantiating dummy time and network");
+    let dummy_time_provider = DummyTimeProvider::new();
+    let dummy_random_provider = DeterministicRandomProvider::new(1);
+    let dummy_network = DummyNetwork::new(dummy_time_provider.clone(), Latency::Fixed(20));
+
+    let mut nodes = vec![];
+
+    let node_count = 10;
+    log::info!("Creating {} waitingroom nodes", node_count);
+    for node_id in 0..node_count {
+        let node = DistributedWaitingRoom::new(
+            settings,
+            node_id,
+            dummy_time_provider.clone(),
+            dummy_random_provider.clone(),
+            dummy_network.clone(),
+        );
+        nodes.push(node);
+    }
+
+    // Now we initialise the node number 0 as the "first" node.
+    nodes[0].initialise_alone().unwrap();
+
+    // Now we add the other nodes, one by one.
+    for i in 1..node_count {
+        log::debug!("Adding node {}", i);
+        nodes[0].add_node(i).unwrap();
+
+        dummy_time_provider.increase_by(20);
+        process_messages(&mut nodes, 10);
+        dummy_time_provider.increase_by(20);
+        process_messages(&mut nodes, 10);
+
+        debug_print_qpid_info_for_nodes(&nodes[..i + 1]);
+
+        verify_qpid_invariant(&nodes[..i + 1]);
+        ensure_only_single_root(&nodes[..i + 1]);
+    }
+
+    // Now, we'll delete a leaf node.
+    log::debug!("Deleting node 3");
+    let _node_3 = nodes.remove(3);
+    // We could wait for fault detection to find it, but in this test we'll just kick it manually.
+    // Node 5 (index 4) has found that it's faulty and will remove it.
+    log::debug!("Kicking node 3");
+    nodes[4].remove_node(3).unwrap();
+    // We'll do some rounds of message processing to make sure the message is processed.
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+
+    debug_print_qpid_info_for_nodes(&nodes);
+    verify_qpid_invariant(&nodes);
+    ensure_only_single_root(&nodes);
+
+    // Now, we'll delete a node that is not a leaf node.
+    // Let's do node 4, which has 3 children.
+    log::debug!("Deleting node 4");
+    let _node_4 = nodes.remove(3); // Index 3 is node 4, since we removed node 3.
+                                   // We could wait for fault detection to find it, but in this test we'll just kick it manually.
+                                   // Node 5 (index 3) has found that it's faulty and will remove it.
+    log::debug!("Kicking node 4");
+    nodes[3].remove_node(4).unwrap();
+    // We'll do some rounds of message processing to make sure the message is processed.
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+
+    debug_print_qpid_info_for_nodes(&nodes);
+    verify_qpid_invariant(&nodes);
+    ensure_only_single_root(&nodes);
+}
+
+#[test]
+fn membership_nonempty() {
+    let settings = GeneralWaitingRoomSettings {
+        ..Default::default()
+    };
+
+    log::info!("Instantiating dummy time and network");
+    let dummy_time_provider = DummyTimeProvider::new();
+    let dummy_random_provider = DeterministicRandomProvider::new(1);
+    let dummy_network = DummyNetwork::new(dummy_time_provider.clone(), Latency::Fixed(20));
+
+    let mut nodes = vec![];
+
+    let node_count = 10;
+    log::info!("Creating {} waitingroom nodes", node_count);
+    for node_id in 0..node_count {
+        let node = DistributedWaitingRoom::new(
+            settings,
+            node_id,
+            dummy_time_provider.clone(),
+            dummy_random_provider.clone(),
+            dummy_network.clone(),
+        );
+        nodes.push(node);
+    }
+
+    // Now we initialise the node number 0 as the "first" node.
+    nodes[0].initialise_alone().unwrap();
+
+    let mut tickets = vec![];
+
+    // We'll join at that node too, for funzies
+    let ticket = nodes[0].join().unwrap();
+    tickets.push(ticket);
+
+    // Now we add the other nodes, one by one.
+    for i in 1..node_count {
+        log::debug!("Adding node {}", i);
+        nodes[0].add_node(i).unwrap();
+
+        dummy_time_provider.increase_by(20);
+        process_messages(&mut nodes, 10);
+        dummy_time_provider.increase_by(20);
+        process_messages(&mut nodes, 10);
+
+        debug_print_qpid_info_for_nodes(&nodes[..i + 1]);
+
+        verify_qpid_invariant(&nodes[..i + 1]);
+        ensure_only_single_root(&nodes[..i + 1]);
+
+        // And we'll join at a random node
+        let node_to_join = dummy_random_provider.random_u64() as usize % (i + 1);
+        log::debug!("Joining at node {}", node_to_join);
+        let ticket = nodes[node_to_join].join().unwrap();
+        tickets.push(ticket);
+        dummy_time_provider.increase_by(20);
+        process_messages(&mut nodes, 10);
+        dummy_time_provider.increase_by(20);
+        process_messages(&mut nodes, 10);
+        dummy_time_provider.increase_by(20);
+        process_messages(&mut nodes, 10);
+        dummy_time_provider.increase_by(20);
+        process_messages(&mut nodes, 10);
+    }
+
+    // Now, we'll delete a leaf node.
+    log::debug!("Deleting node 3");
+    let _node_3 = nodes.remove(3);
+    // We could wait for fault detection to find it, but in this test we'll just kick it manually.
+    // Node 5 (index 4) has found that it's faulty and will remove it.
+    log::debug!("Kicking node 3");
+    nodes[4].remove_node(3).unwrap();
+    // We'll do some rounds of message processing to make sure the message is processed.
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+
+    debug_print_qpid_info_for_nodes(&nodes);
+    verify_qpid_invariant(&nodes);
+    ensure_only_single_root(&nodes);
+
+    // Now, we'll delete a node that is not a leaf node.
+    // Let's do node 4, which has 3 children.
+    log::debug!("Deleting node 4");
+    let _node_4 = nodes.remove(3); // Index 3 is node 4, since we removed node 3.
+                                   // We could wait for fault detection to find it, but in this test we'll just kick it manually.
+                                   // Node 5 (index 3) has found that it's faulty and will remove it.
+    log::debug!("Kicking node 4");
+    nodes[3].remove_node(4).unwrap();
+    // We'll do some rounds of message processing to make sure the message is processed.
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+
+    debug_print_qpid_info_for_nodes(&nodes);
+    verify_qpid_invariant(&nodes);
+    ensure_only_single_root(&nodes);
 }

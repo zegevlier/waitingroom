@@ -11,6 +11,7 @@ use waitingroom_core::{
     WaitingRoomUserTriggered,
 };
 use waitingroom_local_queue::LocalQueue;
+use waitingroom_spanning_trees::SpanningTree;
 
 use crate::weight_table::WeightTable;
 use settings::GeneralWaitingRoomSettings;
@@ -20,6 +21,7 @@ mod test;
 
 mod count;
 mod fault_detection;
+mod membership_changes;
 mod qpid;
 
 /// This is the waiting room implementation described in the associated thesis.
@@ -68,8 +70,8 @@ where
 
     /// This list includes all members of the network, also the ones that are not neighbours in the QPID network.
     network_members: Vec<NodeId>,
-    // mst: MST - This one is not implemented yet, but should be used to store the minimum spanning tree used for QPID.
-    // This will be added when automatic recovery is implemented.
+    spanning_tree: SpanningTree,
+    tree_iteration: usize,
 
     // fd is fault detection. This is in this file, as it is only two functions.
     /// Fault detection last check is the time of the last true check. The timer function is triggered more frequently, to detect faults faster.
@@ -380,6 +382,15 @@ where
                 NodeToNodeMessage::FaultDetectionResponse(check_id) => {
                     self.fault_detection_response(message.from_node, check_id)
                 }
+                NodeToNodeMessage::NodeAdded(node_id, spanning_tree, spanning_tree_iteration) => {
+                    self.node_add_message(node_id, spanning_tree, spanning_tree_iteration)
+                }
+                NodeToNodeMessage::NodeRemoved(node_id, spanning_tree, spanning_tree_iteration) => {
+                    self.node_remove_message(node_id, spanning_tree, spanning_tree_iteration)
+                }
+                NodeToNodeMessage::TreeRestructure(spanning_tree, spanning_tree_iteration) => {
+                    self.restructure_tree_message(spanning_tree, spanning_tree_iteration)
+                }
             }?;
             Ok(true)
         } else {
@@ -409,23 +420,25 @@ where
         };
 
         Self {
-            local_queue: LocalQueue::new(),
-            local_queue_leaving_list: vec![],
-            local_on_site_list: vec![],
-            qpid_parent: None,
-            qpid_weight_table: WeightTable::new(node_id),
             node_id,
             time_provider,
             random_provider,
             settings,
             network_handle,
-            count_parent: None,
-            count_iteration: Time::MIN,
-            count_responses: vec![],
+            qpid_weight_table: WeightTable::new(node_id),
             network_members: vec![node_id],
+            spanning_tree: SpanningTree::from_member_list(vec![node_id]), // Since we usually just join an existing network, we start with an empty tree.
+            tree_iteration: 0, // Always 0 until we receive the first tree from another node.
+            local_queue: LocalQueue::new(),
+            local_on_site_list: vec![],
+            local_queue_leaving_list: vec![],
+            count_responses: vec![],
+            fd_queue: vec![],
+            count_iteration: Time::MIN,
             fd_last_check_time: Time::MIN,
+            count_parent: None,
             fd_last_check_node: None,
-            fd_queue: vec![]
+            qpid_parent: None,
         }
     }
 

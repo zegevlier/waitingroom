@@ -10,3 +10,4 @@ log = { version = "0.4.21", features = ["kv"] }
 test-log = "0.2.16"
 waitingroom-core = { workspace = true }
 waitingroom-local-queue = { workspace = true }
+waitingroom-spanning-trees = { workspace = true }
