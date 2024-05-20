@@ -1,32 +1,12 @@
 use std::{cell::RefCell, rc::Rc};
 
-use rand::{RngCore, SeedableRng};
+use rand::{seq::SliceRandom, Rng, RngCore, SeedableRng};
 
 pub trait RandomProvider {
     /// Returns a random u64.
     fn random_u64(&self) -> u64;
 
-    fn get_random_element_except<T>(&self, elements: &[T], except: &T) -> T
-    where
-        T: Copy + Eq,
-    {
-        let remainder = elements.len() - 1;
-
-        let index = if remainder == 0 {
-            // There are only two elements, so we pick the other one.
-            0
-        } else {
-            self.random_u64() as usize % remainder
-        };
-
-        if elements[index] == *except {
-            // Each element in the vector passed in is unique, so if we find the except element, we can always take the last element.
-            // This is just as random as if it was picked directly.
-            elements[elements.len() - 1]
-        } else {
-            elements[index]
-        }
-    }
+    fn shuffle<T>(&self, slice: &mut [T]);
 }
 
 #[derive(Debug)]
@@ -47,6 +27,10 @@ impl Default for TrueRandomProvider {
 impl RandomProvider for TrueRandomProvider {
     fn random_u64(&self) -> u64 {
         rand::random()
+    }
+
+    fn shuffle<T>(&self, slice: &mut [T]) {
+        slice.shuffle(&mut rand::thread_rng());
     }
 }
 
@@ -78,5 +62,17 @@ impl RandomProvider for DeterministicRandomProvider {
     fn random_u64(&self) -> u64 {
         log::debug!("DeterministicRandomProvider::random");
         self.rand.try_borrow_mut().unwrap().next_u64()
+    }
+
+    fn shuffle<T>(&self, slice: &mut [T]) {
+        log::debug!("DeterministicRandomProvider::shuffle");
+        for i in 0..slice.len() {
+            let j = self
+                .rand
+                .try_borrow_mut()
+                .unwrap()
+                .gen_range(0..slice.len());
+            slice.swap(i, j);
+        }
     }
 }
