@@ -62,7 +62,7 @@ pub trait WaitingRoomTimerTriggered {
     /// If there are less than the minimum number of users, more users are let in.
     /// If there are more than the maximum number of users, users are not let in a number of times.
     /// This function should be called every Xth second, at roughly the same time on all nodes (preferably within a single network request's latency).
-    fn ensure_correct_user_count(&mut self) -> Result<(), WaitingRoomError>;
+    fn eviction(&mut self) -> Result<(), WaitingRoomError>;
 
     /// Calling this function will trigger the fault detection mechanism.
     /// This function should be triggered frequently (eg. every 100ms). It can handle being called too frequently with little overhead.

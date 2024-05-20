@@ -287,8 +287,8 @@ where
         Ok(())
     }
 
-    fn ensure_correct_user_count(&mut self) -> Result<(), WaitingRoomError> {
-        log::info!("[NODE {}] ensure correct user count", self.node_id);
+    fn eviction(&mut self) -> Result<(), WaitingRoomError> {
+        log::info!("[NODE {}] eviction", self.node_id);
         // Only start a count if we are the QPID root node.
         if self.qpid_parent != Some(self.node_id) {
             log::debug!("[NODE {}] not root node, not starting count", self.node_id);
@@ -358,9 +358,10 @@ where
                     self.qpid_handle_update(message.from_node, weight)
                 }
                 NodeToNodeMessage::QPIDDeleteMin => self.qpid_delete_min(),
-                NodeToNodeMessage::QPIDFindRootMessage(weight) => {
-                    self.qpid_handle_find_root(message.from_node, weight)
-                }
+                NodeToNodeMessage::QPIDFindRootMessage {
+                    weight,
+                    last_eviction,
+                } => self.qpid_handle_find_root(message.from_node, weight, last_eviction),
                 NodeToNodeMessage::CountRequest(count_iteration) => {
                     self.count_request(message.from_node, count_iteration)
                 }

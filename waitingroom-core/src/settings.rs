@@ -27,6 +27,9 @@ pub struct GeneralWaitingRoomSettings {
     pub fault_detection_timeout: u128,
     /// The time in milliseconds between calls of the fault detection function.
     pub fault_detection_period: u128,
+
+    /// The time in milliseconds between evictions
+    pub eviction_interval: u128,
 }
 
 impl Default for GeneralWaitingRoomSettings {
@@ -42,6 +45,8 @@ impl Default for GeneralWaitingRoomSettings {
             fault_detection_interval: 1000,
             fault_detection_timeout: 199,
             fault_detection_period: 100,
+
+            eviction_interval: 5000,
         }
     }
 }

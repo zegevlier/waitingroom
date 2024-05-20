@@ -9,6 +9,10 @@ use waitingroom_core::{
 
 use crate::{messages::NodeToNodeMessage, DistributedWaitingRoom};
 
+/// The buffer time is used to ensure we are a bit more lenient on the eviction interval.
+/// We don't want to evict too often.
+const BUFFER_TIME: Time = 10;
+
 impl<T, R, N> DistributedWaitingRoom<T, R, N>
 where
     T: TimeProvider,
@@ -65,7 +69,13 @@ where
                 self.qpid_parent = Some(from_node);
                 let w_v_u = self.qpid_weight_table.compute_weight(from_node);
                 self.network_handle
-                    .send_message(from_node, NodeToNodeMessage::QPIDFindRootMessage(w_v_u))
+                    .send_message(
+                        from_node,
+                        NodeToNodeMessage::QPIDFindRootMessage {
+                            weight: w_v_u,
+                            last_eviction: self.count_iteration,
+                        },
+                    )
                     .unwrap()
             }
         } else {
@@ -125,7 +135,10 @@ where
                 self.network_handle
                     .send_message(
                         new_parent,
-                        NodeToNodeMessage::QPIDFindRootMessage(updated_weight),
+                        NodeToNodeMessage::QPIDFindRootMessage {
+                            weight: updated_weight,
+                            last_eviction: self.count_iteration,
+                        },
                     )
                     .unwrap();
             }
@@ -154,6 +167,7 @@ where
         &mut self,
         from_node: NodeId,
         weight: Time,
+        last_eviction: Time,
     ) -> Result<(), WaitingRoomError> {
         log::info!("[NODE {}] handle find root", self.node_id);
 
@@ -171,9 +185,19 @@ where
             self.network_handle
                 .send_message(
                     self.qpid_parent.unwrap(),
-                    NodeToNodeMessage::QPIDFindRootMessage(w_v_parent_v),
+                    NodeToNodeMessage::QPIDFindRootMessage {
+                        weight: w_v_parent_v,
+                        last_eviction,
+                    },
                 )
                 .unwrap()
+        } else {
+            // We are the new parent. This is not part of regular QPID.
+            // We need to trigger a new eviction if the last eviction was too long ago.
+            let now = self.time_provider.get_now_time();
+            if now - last_eviction > self.settings.eviction_interval + BUFFER_TIME {
+                self.qpid_delete_min()?;
+            }
         }
         Ok(())
     }

@@ -48,7 +48,7 @@ pub(crate) async fn timers(
     timer!(
         ensure_correct_count,
         waitingroom_settings.ensure_correct_user_count_interval,
-        BasicWaitingRoom::ensure_correct_user_count
+        BasicWaitingRoom::eviction
     );
 
     tokio::join!(cleanup, ensure_correct_count).0;
