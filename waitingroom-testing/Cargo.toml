@@ -1,0 +1,12 @@
+[package]
+name = "waitingroom-testing"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+waitingroom-distributed = { path = "../waitingroom-distributed", features = [
+    "testing",
+] }
+waitingroom-core = { workspace = true }
+log.workspace = true
+env_logger = "0.11.3"

@@ -2970,6 +2970,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "waitingroom-testing"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "log",
+ "waitingroom-core",
+ "waitingroom-distributed",
+]
+
+[[package]]
 name = "want"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
