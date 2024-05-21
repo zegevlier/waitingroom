@@ -24,6 +24,10 @@ mod fault_detection;
 mod membership_changes;
 mod qpid;
 
+// The testing module is only available when the testing feature is enabled.
+#[cfg(feature = "testing")]
+pub mod testing;
+
 /// This is the waiting room implementation described in the associated thesis.
 /// TODO: Add more information here.
 #[derive(Debug)]

@@ -62,31 +62,35 @@ where
             // QPID is uninitialized. This is either when a network change happened, or when we haven't initialized at all yet.
             // If this message completes our QPID table, we can let it through. Otherwise, we need to wait for more messages.
 
-            if (self.qpid_weight_table.neighbour_count() + 1) < self.spanning_tree.get_node(self.node_id).unwrap().len() {
+            if (self.qpid_weight_table.neighbour_count() + 1)
+                < self.spanning_tree.get_node(self.node_id).unwrap().len()
+            {
                 // We don't have all the information yet. We need to wait for more messages.
                 return Ok(());
             } else {
                 // We have all the information we need. We can initialize QPID.
-                self.qpid_parent = Some(self.qpid_weight_table.get_smallest().unwrap());
+                if self.qpid_weight_table.any_not_max() {
+                    self.qpid_parent = Some(self.qpid_weight_table.get_smallest().unwrap());
+                } else {
+                    // Otherwise, the lowest node id in our weight table is our parent.
+                    self.qpid_parent = Some(*self.qpid_weight_table.all_neighbours().iter().min().unwrap());
+                }
                 let w_v_u = self.qpid_weight_table.compute_weight(from_node);
-                self.network_handle
-                    .send_message(
-                        from_node,
-                        NodeToNodeMessage::QPIDFindRootMessage {
-                            weight: w_v_u,
-                            last_eviction: self.count_iteration,
-                        },
-                    )
-                    .unwrap();
+                // self.network_handle
+                //     .send_message(
+                //         from_node,
+                //         NodeToNodeMessage::QPIDFindRootMessage {
+                //             weight: w_v_u,
+                //             last_eviction: self.count_iteration,
+                //         },
+                //     )
+                //     .unwrap();
             }
-
-
-
         }
-        let old_w_v_parent_v = dbg!(self
+        let old_w_v_parent_v = self
             .qpid_weight_table
-            .compute_weight(self.qpid_parent.unwrap()));
-        
+            .compute_weight(self.qpid_parent.unwrap());
+
         if self.qpid_parent.unwrap() == self.node_id {
             if weight < self.qpid_weight_table.get(self.node_id).unwrap() {
                 self.qpid_parent = Some(from_node);
@@ -102,9 +106,9 @@ where
                     .unwrap()
             }
         } else {
-            let new_w_v_parent_v = dbg!(self
+            let new_w_v_parent_v = self
                 .qpid_weight_table
-                .compute_weight(self.qpid_parent.unwrap()));
+                .compute_weight(self.qpid_parent.unwrap());
             if new_w_v_parent_v != old_w_v_parent_v {
                 self.network_handle
                     .send_message(
@@ -195,7 +199,9 @@ where
         log::info!("[NODE {}] handle find root", self.node_id);
 
         if self.qpid_parent.is_none() {
-            return Err(WaitingRoomError::QPIDNotInitialized);
+            log::warn!("QPID not initialized");
+            return Ok(());
+            // return Err(WaitingRoomError::QPIDNotInitialized);
         }
 
         self.qpid_weight_table.set(from_node, weight);
