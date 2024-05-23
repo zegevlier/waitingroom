@@ -1,6 +1,7 @@
-use core::time;
+use std::fs::OpenOptions;
 
 use checks::assert_consistent_state;
+use fern::colors::ColoredLevelConfig;
 use waitingroom_core::{
     network::DummyNetwork,
     random::{DeterministicRandomProvider, RandomProvider},
@@ -19,15 +20,61 @@ type Node = waitingroom_distributed::DistributedWaitingRoom<
 >;
 
 fn main() {
-    env_logger::init();
-    
+    let time_provider = DummyTimeProvider::new();
+
+    // env_logger::init();
+    let colors = ColoredLevelConfig::new()
+        .debug(fern::colors::Color::Cyan)
+        .info(fern::colors::Color::Green)
+        .warn(fern::colors::Color::Yellow)
+        .error(fern::colors::Color::Red);
+
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open("output.log")
+        .unwrap();
+
+    let time_provider_fern = time_provider.clone();
+    fern::Dispatch::new()
+        .format(move |out, message, record| {
+            let start_length = record.target().len();
+            let max_len = 30;
+            let (target, target_padding) = if start_length > max_len {
+                (&record.target()[start_length - max_len..], "".to_string())
+            } else {
+                (record.target(), " ".repeat(max_len - start_length))
+            };
+            let time = time_provider_fern.get_now_time();
+            // Since it's much more likely to go wrong in the first 100 time steps, it does't matter as much if the rest is not aligned perfectly.
+            let time_padding = " ".repeat(3_usize.saturating_sub(time.to_string().len()));
+            out.finish(format_args!(
+                "[{}{}][{}{}][{}] {}",
+                target,
+                target_padding,
+                time,
+                time_padding,
+                colors.color(record.level()),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Debug)
+        .chain(std::io::stdout())
+        .chain(file)
+        .level_for("waitingroom_core::random", log::LevelFilter::Info)
+        .apply()
+        .unwrap();
+
     // We use a separate random provider for our decisions vs those of the network. This makes it easier to re-do tests with a modified node implementation.
     let network_random_provider = DeterministicRandomProvider::new(1);
 
-    let node_random_provider = DeterministicRandomProvider::new(network_random_provider.random_u64());
-    let latency = waitingroom_core::network::Latency::Random(1, 20, network_random_provider.clone());
+    let node_random_provider =
+        DeterministicRandomProvider::new(network_random_provider.random_u64());
+    let latency =
+        waitingroom_core::network::Latency::Random(1, 20, network_random_provider.clone());
+    // let latency = waitingroom_core::network::Latency::Fixed(10);
 
-    let time_provider = DummyTimeProvider::new();
     let network: DummyNetwork<NodeToNodeMessage> =
         DummyNetwork::new(time_provider.clone(), latency);
 
@@ -57,8 +104,6 @@ fn main() {
         );
 
         nodes.push(node);
-        time_provider.increase_by(20);
-        process_messages(&mut nodes, &network_random_provider);
     }
 
     // We initialize the network with the nodes.
@@ -66,7 +111,11 @@ fn main() {
 
     // We add the other nodes to the network.
     for i in 1..node_count {
-        nodes[0].add_node(i).unwrap();
+        // nodes[0].add_node(i).unwrap();
+        nodes[i].join_at(0).unwrap();
+        
+        // time_provider.increase_by(20); // We wait until the "you're in the network" message has arrived.
+        // process_messages(&mut nodes, &network_random_provider);
     }
 
     // Now we start the network running.
@@ -76,18 +125,20 @@ fn main() {
 
         process_messages(&mut nodes, &network_random_provider);
 
-        // We'll not mess with it in the first 100 time steps, since nodes are still joining.
-        if time_provider.get_now_time() < 35 {
+        // // We'll not mess with it in the first 100 time steps, since nodes are still joining.
+        // if time_provider.get_now_time() < 40 {
+        //     continue;
+        // }
+        // For now, don't do anything when there are in flight messages.
+        if !network.is_empty() {
             continue;
         }
 
         // Now all messages are processed, we can do other fun things.
         // First, for good measure, we check if the network is still in a consistent state.
-        debug_print_qpid_info_for_nodes(&nodes);
         assert_consistent_state(&nodes);
 
-        if time_provider.get_now_time() > 35 {
-            debug_print_qpid_info_for_nodes(&nodes);
+        if time_provider.get_now_time() > 100 {
             break;
         }
     }
@@ -121,7 +172,7 @@ fn debug_print_qpid_info_for_nodes(nodes: &[Node]) {
     log::info!("Debug printing QPID states");
     for node in nodes.iter() {
         log::info!(
-            "Node {}\nQPID parent: {:?}",
+            "Node {}\t\tQPID parent: {:?}",
             node.get_node_id(),
             node.get_qpid_parent()
         );

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{cell::{RefCell, RefMut}, fmt::Debug, rc::Rc};
 
 use log;
 
@@ -45,7 +45,7 @@ impl Debug for Latency {
 }
 
 #[derive(Debug)]
-struct DummyMessage<M> {
+pub struct DummyMessage<M> {
     message: Message<M>,
     arrival_time: u128,
 }
@@ -158,8 +158,16 @@ where
         }
     }
 
-    pub fn total_messages_in_network(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.messages.borrow().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.messages.borrow().is_empty()
+    }
+
+    pub fn get_messages_mut(&self) -> RefMut<Vec<DummyMessage<M>>> {
+        self.messages.borrow_mut()
     }
 }
 

@@ -281,33 +281,24 @@ fn simple_fault_test() {
     nodes[0].fault_detection().unwrap();
     nodes[1].fault_detection().unwrap();
 
-    assert!(dummy_network.total_messages_in_network() == 2);
+    assert!(dummy_network.len() == 2);
 
     dummy_time_provider.increase_by(20);
 
     process_messages(&mut nodes, 10);
 
-    assert!(
-        dummy_network.total_messages_in_network() == 2,
-        "They should both have replied."
-    );
+    assert!(dummy_network.len() == 2, "They should both have replied.");
 
     dummy_time_provider.increase_by(20);
     process_messages(&mut nodes, 10);
 
-    assert!(
-        dummy_network.total_messages_in_network() == 0,
-        "the messages should be processed"
-    );
+    assert!(dummy_network.len() == 0, "the messages should be processed");
 
     // These are before the interval, so no messages should be sent
     nodes[0].fault_detection().unwrap();
     nodes[1].fault_detection().unwrap();
 
-    assert!(
-        dummy_network.total_messages_in_network() == 0,
-        "No messages should be sent"
-    );
+    assert!(dummy_network.len() == 0, "No messages should be sent");
 
     // Now, we wait for the interval to pass
     dummy_time_provider.increase_by(1000);
@@ -319,7 +310,7 @@ fn simple_fault_test() {
 
     process_messages(&mut nodes, 10); // This doesn't do anything, because node 1 is not in the network anymore
     assert!(
-        dummy_network.total_messages_in_network() == 1,
+        dummy_network.len() == 1,
         "The old message shouldn't be picked up"
     );
 
@@ -331,10 +322,7 @@ fn simple_fault_test() {
     process_messages(&mut nodes, 10);
 
     // The old message will still be there, since it's not picked up by the other node, but no new messages should be sent
-    assert!(
-        dummy_network.total_messages_in_network() == 1,
-        "No new messages should be sent"
-    );
+    assert!(dummy_network.len() == 1, "No new messages should be sent");
 
     // Now we wait for the timeout
     dummy_time_provider.increase_by(100);
@@ -568,8 +556,11 @@ fn membership_basic_add_remove() {
     // Now we add the other nodes, one by one.
     for i in 1..node_count {
         log::debug!("Adding node {}", i);
-        nodes[0].add_node(i).unwrap();
+        // nodes[0].add_node(i).unwrap();
+        nodes[i].join_at(0).unwrap();
 
+        dummy_time_provider.increase_by(20);
+        process_messages(&mut nodes, 10);
         dummy_time_provider.increase_by(20);
         process_messages(&mut nodes, 10);
         dummy_time_provider.increase_by(20);
@@ -653,8 +644,11 @@ fn membership_nonempty() {
     // Now we add the other nodes, one by one.
     for i in 1..node_count {
         log::debug!("Adding node {}", i);
-        nodes[0].add_node(i).unwrap();
+        // nodes[0].add_node(i).unwrap();
+        nodes[i].join_at(0).unwrap();
 
+        dummy_time_provider.increase_by(20);
+        process_messages(&mut nodes, 10);
         dummy_time_provider.increase_by(20);
         process_messages(&mut nodes, 10);
         dummy_time_provider.increase_by(20);
@@ -712,6 +706,84 @@ fn membership_nonempty() {
     process_messages(&mut nodes, 10);
     dummy_time_provider.increase_by(20);
     process_messages(&mut nodes, 10);
+
+    debug_print_qpid_info_for_nodes(&nodes);
+    verify_qpid_invariant(&nodes);
+    ensure_only_single_root(&nodes);
+}
+
+#[test]
+fn membership_regression_joins() {
+    // We had a race condition if two nodes joined at the same time.
+    // Some messages are truncated:
+    // Race condition:
+    // Node 1 joins network at node 0
+    // Node 2 joins network at node 0
+
+    // Node 1 gets 2's tree update
+    // Node 1 sends update to 0
+    // Node 1 gets update from 0
+
+    // Node 1 get 1's tree update
+    // Parent is set to self ERROR, this means that the parent will never be set properly, as it has already been set to something else.
+
+    // This test should check if this is fixed.
+
+    let settings = GeneralWaitingRoomSettings {
+        ..Default::default()
+    };
+
+    log::info!("Instantiating dummy time and network");
+    let dummy_time_provider = DummyTimeProvider::new();
+    let dummy_random_provider = DeterministicRandomProvider::new(1);
+    let dummy_network = DummyNetwork::new(dummy_time_provider.clone(), Latency::Fixed(20));
+
+    let mut nodes = vec![];
+
+    let node_count = 3;
+    log::info!("Creating {} waitingroom nodes", node_count);
+    for node_id in 0..node_count {
+        let node = DistributedWaitingRoom::new(
+            settings,
+            node_id,
+            dummy_time_provider.clone(),
+            dummy_random_provider.clone(),
+            dummy_network.clone(),
+        );
+        nodes.push(node);
+    }
+
+    // Now we initialise the node number 0 as the "first" node.
+    nodes[0].initialise_alone().unwrap();
+
+    // Now we add the other nodes, one by one.
+    #[allow(clippy::needless_range_loop)]
+    for i in 1..node_count {
+        log::debug!("Adding node {}", i);
+        // nodes[0].add_node(i).unwrap();
+        nodes[i].join_at(0).unwrap();
+    }
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+
+    // Now, we need to make sure that node 1 gets node 2's tree update, then all other messages are processed, then node 1 gets its own tree update.
+    // A kind of hacky way we can do this is to just 1's tree update message. We'll add it back in later.
+    let message = dummy_network.get_messages_mut().remove(0);
+    dbg!(&message);
+
+    // Now we process all the other messages
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+
+    // Now we add the message back in
+    dummy_network.get_messages_mut().push(message);
+
+    // Now we process the message
+    dummy_time_provider.increase_by(20);
+    process_messages(&mut nodes, 10);
+    // And now, this should succeed without any errors.
 
     debug_print_qpid_info_for_nodes(&nodes);
     verify_qpid_invariant(&nodes);
