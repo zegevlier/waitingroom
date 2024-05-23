@@ -49,7 +49,7 @@ impl DummyTimeProvider {
     }
 
     pub fn increase_by(&self, amount: Time) {
-        log::debug!("Increasing dummy time by {}", amount);
+        // log::debug!("Increasing dummy time by {}", amount);
         // self.time.set((*self.time).get() + amount);
         *self.time.lock().unwrap().deref_mut() += amount;
     }
