@@ -1,4 +1,8 @@
-use std::{cell::{RefCell, RefMut}, fmt::Debug, rc::Rc};
+use std::{
+    cell::{RefCell, RefMut},
+    fmt::Debug,
+    rc::Rc,
+};
 
 use log;
 
@@ -32,7 +36,7 @@ pub trait NetworkHandle<M>: Debug {
 #[derive(Clone)]
 pub enum Latency {
     Fixed(u128),
-    Random(u128, u128, DeterministicRandomProvider),
+    Random(u128, u128, Option<DeterministicRandomProvider>),
 }
 
 impl Debug for Latency {
@@ -40,6 +44,15 @@ impl Debug for Latency {
         match self {
             Self::Fixed(arg0) => f.debug_tuple("Fixed").field(arg0).finish(),
             Self::Random(arg0, arg1, _) => f.debug_tuple("Random").field(arg0).field(arg1).finish(),
+        }
+    }
+}
+
+impl Latency {
+    pub fn apply_random_provider(self, random_provider: DeterministicRandomProvider) -> Self {
+        match self {
+            Self::Random(min, max, _) => Self::Random(min, max, Some(random_provider)),
+            Self::Fixed(latency) => Self::Fixed(latency),
         }
     }
 }
@@ -120,7 +133,7 @@ where
         let latency = match &self.latency {
             Latency::Fixed(latency) => *latency,
             Latency::Random(min, max, random_provider) => {
-                let random = random_provider.random_u64() as u128;
+                let random = random_provider.as_ref().unwrap().random_u64() as u128;
                 min + random % (max - min)
             }
         };

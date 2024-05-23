@@ -1,4 +1,4 @@
-use crate::{debug_print_qpid_info_for_nodes, Node};
+use crate::{debug_print_qpid_info_for_nodes, user::User, Node};
 
 pub fn assert_consistent_state(nodes: &[Node]) {
     if !verify_qpid_invariant(nodes) {
@@ -82,4 +82,11 @@ fn ensure_only_single_root(nodes: &[Node]) -> bool {
         return false;
     }
     true
+}
+
+pub fn validate_results(_nodes: &[Node], _users: &[User]) {
+    log::info!("Validating results");
+
+    // TODO: Implement this function.
+    // This function should check that the users were let out in the correct order.
 }

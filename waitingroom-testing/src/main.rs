@@ -1,17 +1,19 @@
 use std::fs::OpenOptions;
 
-use checks::assert_consistent_state;
 use fern::colors::ColoredLevelConfig;
+use log::LevelFilter;
 use waitingroom_core::{
     network::DummyNetwork,
-    random::{DeterministicRandomProvider, RandomProvider},
-    settings::GeneralWaitingRoomSettings,
+    random::DeterministicRandomProvider,
     time::{DummyTimeProvider, TimeProvider},
-    WaitingRoomMessageTriggered, WaitingRoomTimerTriggered, WaitingRoomUserTriggered,
 };
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
 mod checks;
+mod simulation;
+mod user;
+
+use simulation::SimulationConfig;
 
 type Node = waitingroom_distributed::DistributedWaitingRoom<
     DummyTimeProvider,
@@ -19,10 +21,7 @@ type Node = waitingroom_distributed::DistributedWaitingRoom<
     DummyNetwork<NodeToNodeMessage>,
 >;
 
-fn main() {
-    let time_provider = DummyTimeProvider::new();
-
-    // env_logger::init();
+fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFilter) {
     let colors = ColoredLevelConfig::new()
         .debug(fern::colors::Color::Cyan)
         .info(fern::colors::Color::Green)
@@ -59,118 +58,21 @@ fn main() {
                 message
             ))
         })
-        .level(log::LevelFilter::Debug)
+        .level(logging_level)
         .chain(std::io::stdout())
         .chain(file)
         .level_for("waitingroom_core::random", log::LevelFilter::Info)
         .apply()
         .unwrap();
-
-    let seed = 1;
-    // We use a separate random provider for our decisions vs those of the network. This makes it easier to re-do tests with a modified node implementation.
-    log::info!("Seed: {}", seed);
-    let network_random_provider = DeterministicRandomProvider::new(seed);
-
-    let node_random_provider =
-        DeterministicRandomProvider::new(network_random_provider.random_u64());
-    let latency =
-        waitingroom_core::network::Latency::Random(1, 20, network_random_provider.clone());
-    // let latency = waitingroom_core::network::Latency::Fixed(10);
-
-    let network: DummyNetwork<NodeToNodeMessage> =
-        DummyNetwork::new(time_provider.clone(), latency);
-
-    let settings = GeneralWaitingRoomSettings {
-        min_user_count: 20,
-        max_user_count: 25,
-        ticket_refresh_time: 6000,
-        ticket_expiry_time: 20000,
-        pass_expiry_time: 20000,
-        fault_detection_period: 1000,
-        fault_detection_timeout: 200,
-        fault_detection_interval: 100,
-        eviction_interval: 5000,
-        cleanup_interval: 10000,
-    };
-
-    let mut nodes = Vec::new();
-
-    let node_count = 5;
-
-    for i in 0..node_count {
-        let node = waitingroom_distributed::DistributedWaitingRoom::new(
-            settings,
-            i,
-            time_provider.clone(),
-            node_random_provider.clone(),
-            network.clone(),
-        );
-
-        nodes.push(node);
-    }
-
-    // We initialize the network with the nodes.
-    nodes[0].initialise_alone().unwrap();
-
-    // We add the other nodes to the network.
-    for node in nodes.iter_mut() {
-        node.join_at(0).unwrap();
-    }
-
-    let mut past_initialisation = false;
-
-    // Now we start the network running.
-    loop {
-        // Each iteration of the loop is one time step.
-        time_provider.increase_by(1);
-
-        process_messages(&mut nodes, &network_random_provider);
-
-        // While the network is starting up, we just keep processing messages.
-        // This is fine, because we have tests later that add and remove nodes, so we can test the network in a variety of states.
-        if !network.is_empty() && !past_initialisation {
-            continue;
-        }
-        if !past_initialisation {
-            log::info!("Past initialisation");
-            past_initialisation = true;
-        }
-
-        call_timer_functions(&mut nodes, &time_provider, &settings);
-
-        // We'll check if we're in all the right states.
-        // If we're not, this function will panic.
-        assert_consistent_state(&nodes);
-
-        // We'll stop the network after 100 time steps.
-        if time_provider.get_now_time() > 10000 {
-            break;
-        }
-    }
 }
 
-fn process_messages(nodes: &mut [Node], random_provider: &DeterministicRandomProvider) {
-    // We first process all the network messages that came in at this time step. We randomise the order in which the nodes process their messages.
-    let mut node_indices: Vec<usize> = (0..nodes.len()).collect();
+fn main() {
+    let logging_level = LevelFilter::Debug;
+    let time_provider = DummyTimeProvider::new();
 
-    let mut nodes_that_processed = Vec::new();
-    loop {
-        random_provider.shuffle(&mut node_indices);
+    initialise_logging(&time_provider, logging_level);
 
-        while let Some(node_index) = node_indices.pop() {
-            let node = &mut nodes[node_index];
-            if node.receive_message().unwrap() {
-                nodes_that_processed.push(node_index);
-            }
-        }
-
-        // This empties out the nodes_that_processed vector, and puts its old contents into node_indices.
-        node_indices = std::mem::take(&mut nodes_that_processed);
-
-        if node_indices.is_empty() {
-            break;
-        }
-    }
+    simulation::run(1, &time_provider, SimulationConfig {});
 }
 
 fn debug_print_qpid_info_for_nodes(nodes: &[Node]) {
@@ -185,36 +87,6 @@ fn debug_print_qpid_info_for_nodes(nodes: &[Node]) {
         log::info!("Neighbour\t\tWeight");
         for (neighbour, weight) in node.get_qpid_weight_table().all_weights() {
             log::info!("{}\t\t\t\t{}", neighbour, weight);
-        }
-    }
-}
-
-fn call_timer_functions(
-    nodes: &mut [Node],
-    time_provider: &DummyTimeProvider,
-    settings: &GeneralWaitingRoomSettings,
-) {
-    let now = time_provider.get_now_time();
-
-    if now % settings.cleanup_interval == 0 {
-        // We'll call it on all nodes at the same time. This isn't strictly required for cleanup
-        // but there's no reason not to.
-        for node in nodes.iter_mut() {
-            node.cleanup().unwrap();
-        }
-    }
-
-    if now % settings.eviction_interval == 0 {
-        // It is important that we call the eviction function on all nodes at the same time.
-        for node in nodes.iter_mut() {
-            node.eviction().unwrap();
-        }
-    }
-
-    if now % settings.fault_detection_period == 0 {
-        // We'll call it on all nodes at the same time. This isn't strictly required for fault detection
-        for node in nodes.iter_mut() {
-            node.fault_detection().unwrap();
         }
     }
 }
