@@ -7,7 +7,7 @@ use waitingroom_core::{
     random::{DeterministicRandomProvider, RandomProvider},
     settings::GeneralWaitingRoomSettings,
     time::{DummyTimeProvider, TimeProvider},
-    WaitingRoomMessageTriggered,
+    WaitingRoomMessageTriggered, WaitingRoomTimerTriggered, WaitingRoomUserTriggered,
 };
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
@@ -86,10 +86,11 @@ fn main() {
         ticket_refresh_time: 6000,
         ticket_expiry_time: 20000,
         pass_expiry_time: 20000,
-        fault_detection_interval: 1000,
+        fault_detection_period: 1000,
         fault_detection_timeout: 200,
-        fault_detection_period: 100,
+        fault_detection_interval: 100,
         eviction_interval: 5000,
+        cleanup_interval: 10000,
     };
 
     let mut nodes = Vec::new();
@@ -116,6 +117,8 @@ fn main() {
         node.join_at(0).unwrap();
     }
 
+    let mut past_initialisation = false;
+
     // Now we start the network running.
     loop {
         // Each iteration of the loop is one time step.
@@ -123,20 +126,24 @@ fn main() {
 
         process_messages(&mut nodes, &network_random_provider);
 
-        // // We'll not mess with it in the first 100 time steps, since nodes are still joining.
-        // if time_provider.get_now_time() < 40 {
-        //     continue;
-        // }
-        // For now, don't do anything when there are in flight messages.
-        if !network.is_empty() {
+        // While the network is starting up, we just keep processing messages.
+        // This is fine, because we have tests later that add and remove nodes, so we can test the network in a variety of states.
+        if !network.is_empty() && !past_initialisation {
             continue;
         }
+        if !past_initialisation {
+            log::info!("Past initialisation");
+            past_initialisation = true;
+        }
 
-        // Now all messages are processed, we can do other fun things.
-        // First, for good measure, we check if the network is still in a consistent state.
+        call_timer_functions(&mut nodes, &time_provider, &settings);
+
+        // We'll check if we're in all the right states.
+        // If we're not, this function will panic.
         assert_consistent_state(&nodes);
 
-        if time_provider.get_now_time() > 100 {
+        // We'll stop the network after 100 time steps.
+        if time_provider.get_now_time() > 10000 {
             break;
         }
     }
@@ -178,6 +185,36 @@ fn debug_print_qpid_info_for_nodes(nodes: &[Node]) {
         log::info!("Neighbour\t\tWeight");
         for (neighbour, weight) in node.get_qpid_weight_table().all_weights() {
             log::info!("{}\t\t\t\t{}", neighbour, weight);
+        }
+    }
+}
+
+fn call_timer_functions(
+    nodes: &mut [Node],
+    time_provider: &DummyTimeProvider,
+    settings: &GeneralWaitingRoomSettings,
+) {
+    let now = time_provider.get_now_time();
+
+    if now % settings.cleanup_interval == 0 {
+        // We'll call it on all nodes at the same time. This isn't strictly required for cleanup
+        // but there's no reason not to.
+        for node in nodes.iter_mut() {
+            node.cleanup().unwrap();
+        }
+    }
+
+    if now % settings.eviction_interval == 0 {
+        // It is important that we call the eviction function on all nodes at the same time.
+        for node in nodes.iter_mut() {
+            node.eviction().unwrap();
+        }
+    }
+
+    if now % settings.fault_detection_period == 0 {
+        // We'll call it on all nodes at the same time. This isn't strictly required for fault detection
+        for node in nodes.iter_mut() {
+            node.fault_detection().unwrap();
         }
     }
 }
