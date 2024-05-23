@@ -292,13 +292,13 @@ fn simple_fault_test() {
     dummy_time_provider.increase_by(20);
     process_messages(&mut nodes, 10);
 
-    assert!(dummy_network.len() == 0, "the messages should be processed");
+    assert!(dummy_network.is_empty(), "the messages should be processed");
 
     // These are before the interval, so no messages should be sent
     nodes[0].fault_detection().unwrap();
     nodes[1].fault_detection().unwrap();
 
-    assert!(dummy_network.len() == 0, "No messages should be sent");
+    assert!(dummy_network.is_empty(), "No messages should be sent");
 
     // Now, we wait for the interval to pass
     dummy_time_provider.increase_by(1000);

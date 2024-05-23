@@ -217,9 +217,10 @@ where
                 // We need to add this neighbour.
 
                 // If the neighbour is already in the weight table, some messages got reordered, but that's fine.
-                // We just don't re-add them.
+                // We still add them, so they get an update if they need it. We don't count them though, since
+                // nothing on our side changed.
+                self.add_neighbour(neighbour)?;
                 if self.qpid_weight_table.get(neighbour).is_none() {
-                    self.add_neighbour(neighbour)?;
                     any_added = true;
                 }
             }

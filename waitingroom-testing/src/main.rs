@@ -66,8 +66,10 @@ fn main() {
         .apply()
         .unwrap();
 
+    let seed = 1;
     // We use a separate random provider for our decisions vs those of the network. This makes it easier to re-do tests with a modified node implementation.
-    let network_random_provider = DeterministicRandomProvider::new(1);
+    log::info!("Seed: {}", seed);
+    let network_random_provider = DeterministicRandomProvider::new(seed);
 
     let node_random_provider =
         DeterministicRandomProvider::new(network_random_provider.random_u64());
@@ -110,12 +112,8 @@ fn main() {
     nodes[0].initialise_alone().unwrap();
 
     // We add the other nodes to the network.
-    for i in 1..node_count {
-        // nodes[0].add_node(i).unwrap();
-        nodes[i].join_at(0).unwrap();
-        
-        // time_provider.increase_by(20); // We wait until the "you're in the network" message has arrived.
-        // process_messages(&mut nodes, &network_random_provider);
+    for node in nodes.iter_mut() {
+        node.join_at(0).unwrap();
     }
 
     // Now we start the network running.
