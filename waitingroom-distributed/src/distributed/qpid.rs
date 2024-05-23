@@ -56,6 +56,13 @@ where
         weight: Time,
     ) -> Result<(), WaitingRoomError> {
         log::info!("[NODE {}] handle update", self.node_id);
+
+        let mut old_w_v_parent_v = if let Some(qpid_parent) = self.qpid_parent {
+            Some(self.qpid_weight_table.compute_weight(qpid_parent))
+        } else {
+            None
+        };
+
         self.qpid_weight_table.set(from_node, weight);
 
         if self.qpid_parent.is_none() {
@@ -65,31 +72,36 @@ where
             if (self.qpid_weight_table.neighbour_count() + 1)
                 < self.spanning_tree.get_node(self.node_id).unwrap().len()
             {
+                log::debug!(
+                    "[NODE {}] QPID not initialized yet. Waiting for more messages",
+                    self.node_id
+                );
                 // We don't have all the information yet. We need to wait for more messages.
                 return Ok(());
-            } else {
-                // We have all the information we need. We can initialize QPID.
-                if self.qpid_weight_table.any_not_max() {
-                    self.qpid_parent = Some(self.qpid_weight_table.get_smallest().unwrap());
-                } else {
-                    // Otherwise, the lowest node id in our weight table is our parent.
-                    self.qpid_parent = Some(*self.qpid_weight_table.all_neighbours().iter().min().unwrap());
-                }
-                let w_v_u = self.qpid_weight_table.compute_weight(from_node);
-                // self.network_handle
-                //     .send_message(
-                //         from_node,
-                //         NodeToNodeMessage::QPIDFindRootMessage {
-                //             weight: w_v_u,
-                //             last_eviction: self.count_iteration,
-                //         },
-                //     )
-                //     .unwrap();
             }
+
+            // We have all the information we need. We can initialize QPID.
+            if self.qpid_weight_table.any_not_max() {
+                log::debug!("[NODE {}] Initializing QPID with values from weight table", self.node_id);
+                self.qpid_parent = Some(self.qpid_weight_table.get_smallest().unwrap());
+            } else {
+                log::debug!("[NODE {}] Initializing QPID with values from spanning tree", self.node_id);
+                // Otherwise, the lowest node id in our weight table is our parent.
+                self.qpid_parent = Some(
+                    *self
+                        .qpid_weight_table
+                        .all_neighbours()
+                        .iter()
+                        .min()
+                        .unwrap(),
+                );
+            }
+
+            old_w_v_parent_v = Some(
+                self.qpid_weight_table
+                    .compute_weight(self.qpid_parent.unwrap()),
+            );
         }
-        let old_w_v_parent_v = self
-            .qpid_weight_table
-            .compute_weight(self.qpid_parent.unwrap());
 
         if self.qpid_parent.unwrap() == self.node_id {
             if weight < self.qpid_weight_table.get(self.node_id).unwrap() {
@@ -109,7 +121,7 @@ where
             let new_w_v_parent_v = self
                 .qpid_weight_table
                 .compute_weight(self.qpid_parent.unwrap());
-            if new_w_v_parent_v != old_w_v_parent_v {
+            if new_w_v_parent_v != old_w_v_parent_v.unwrap() {
                 self.network_handle
                     .send_message(
                         self.qpid_parent.unwrap(),

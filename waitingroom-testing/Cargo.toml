@@ -10,3 +10,5 @@ waitingroom-distributed = { path = "../waitingroom-distributed", features = [
 waitingroom-core = { workspace = true }
 log.workspace = true
 env_logger = "0.11.3"
+anyhow = "1.0.86"
+fern = {version = "0.6.2", features = ["colored"] }

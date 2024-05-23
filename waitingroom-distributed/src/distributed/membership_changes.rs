@@ -14,6 +14,23 @@ where
     R: RandomProvider,
     N: Network<NodeToNodeMessage>,
 {
+    pub fn join_at(&mut self, at: NodeId) -> Result<(), WaitingRoomError> {
+        log::debug!("[{}] Joining at {}", self.node_id, at);
+        self.qpid_weight_table.set(self.node_id, Time::MAX);
+        self.network_handle
+            .send_message(at, NodeToNodeMessage::NodeJoin(self.node_id))?;
+        Ok(())
+    }
+
+    pub fn node_join_message(&mut self, node_id: NodeId) -> Result<(), WaitingRoomError> {
+        log::debug!(
+            "[{}] Received NodeJoin message from {}",
+            self.node_id,
+            node_id
+        );
+        self.add_node(node_id)
+    }
+
     pub fn initialise_alone(&mut self) -> Result<(), WaitingRoomError> {
         log::debug!("[{}] Initialising alone", self.node_id);
         self.tree_iteration += 1;
@@ -53,7 +70,7 @@ where
         iteration: usize,
     ) -> Result<(), WaitingRoomError> {
         log::debug!(
-            "[{}] Received NodeAdded message from {}",
+            "[{}] Received NodeAdded message for {}",
             self.node_id,
             node_id
         );
@@ -61,13 +78,6 @@ where
         // If we get conflicting messages, we'll need to know that this node is a member.
         if !self.network_members.contains(&node_id) {
             self.network_members.push(node_id);
-        }
-
-        // If we're the node being added, we need to add ourself to the QPID table and set ourselves as the parent.
-        if node_id == self.node_id {
-            self.qpid_weight_table.set(self.node_id, Time::MAX);
-            self.qpid_parent = Some(self.node_id);
-            self.network_members = tree.get_node_list();
         }
 
         // The behaviour now is the same as for restructure_tree_message, so we just call that.
@@ -185,6 +195,13 @@ where
         let mut any_added = false;
         let mut any_removed = false;
 
+        // We add all the nodes in the tree to our member list:
+        for node in tree.get_node_list() {
+            if !self.network_members.contains(&node) {
+                self.network_members.push(node);
+            }
+        }
+
         for neighbour in old_neighbours.iter() {
             if !new_neighbours.contains(neighbour) {
                 // We have a neighbour in the old tree that is not in the new tree.
@@ -198,14 +215,22 @@ where
             if !old_neighbours.contains(&neighbour) {
                 // We have a neighbour in the new tree that is not in the old tree.
                 // We need to add this neighbour.
-                self.add_neighbour(neighbour)?;
-                any_added = true;
+
+                // If the neighbour is already in the weight table, some messages got reordered, but that's fine.
+                // We just don't re-add them.
+                if self.qpid_weight_table.get(neighbour).is_none() {
+                    self.add_neighbour(neighbour)?;
+                    any_added = true;
+                }
             }
         }
 
         if any_added && any_removed {
             // We've both added and removed neighbours. After we've received the missing updates, we can re-determine the parent.
-            log::debug!("[{}] Both added and removed neighbours. Waiting for updates.", self.node_id);
+            log::debug!(
+                "[{}] Both added and removed neighbours. Waiting for updates.",
+                self.node_id
+            );
             self.qpid_parent = None; // We don't know who the parent should be, so we set it to None.
         } else if any_added {
             // We've only added neighbours. We need to wait for the updates from the new neighbours.
@@ -214,7 +239,11 @@ where
         } else if any_removed {
             // We've only removed neighbours. We can just recompute the parent.
             let new_parent = self.qpid_weight_table.get_smallest().unwrap();
-            log::debug!("[{}] Removed neighbours. New parent: {}", self.node_id, new_parent);
+            log::debug!(
+                "[{}] Removed neighbours. New parent: {}",
+                self.node_id,
+                new_parent
+            );
             self.qpid_parent = Some(new_parent);
         }
 
@@ -253,7 +282,6 @@ where
 
     fn add_neighbour(&mut self, neighbour: NodeId) -> Result<(), WaitingRoomError> {
         log::debug!("[{}] Adding neighbour {}", self.node_id, neighbour);
-
         // Now, we send an update message to our new neighbour.
         let weight = self.qpid_weight_table.compute_weight(neighbour);
         self.network_handle

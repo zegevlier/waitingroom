@@ -395,6 +395,7 @@ where
                 NodeToNodeMessage::TreeRestructure(spanning_tree, spanning_tree_iteration) => {
                     self.restructure_tree_message(spanning_tree, spanning_tree_iteration)
                 }
+                NodeToNodeMessage::NodeJoin(node_id) => self.node_join_message(node_id),
             }?;
             Ok(true)
         } else {

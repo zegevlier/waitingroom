@@ -13,4 +13,5 @@ pub enum NodeToNodeMessage {
     NodeAdded(NodeId, SpanningTree, usize),
     NodeRemoved(NodeId, SpanningTree, usize),
     TreeRestructure(SpanningTree, usize),
+    NodeJoin(NodeId),
 }
