@@ -329,7 +329,7 @@ where
             // If it's not been too long yet, we do nothing.
         }
         // Else, if we don't have a last check node, we only check a node if it's been long enough since the last check.
-        else if self.settings.fault_detection_interval < now_time - self.fd_last_check_time {
+        else if self.settings.fault_detection_period < now_time - self.fd_last_check_time {
             // We pick a random node to check.
             let node_to_check = self.fd_queue.pop().unwrap_or_else(|| {
                 let mut nodes = self.network_members.clone();

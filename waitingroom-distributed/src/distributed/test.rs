@@ -247,9 +247,9 @@ fn process_messages(nodes: &mut [Node], max_number: usize) -> bool {
 #[test]
 fn simple_fault_test() {
     let settings = GeneralWaitingRoomSettings {
-        fault_detection_interval: 1000,
+        fault_detection_period: 1000,
         fault_detection_timeout: 199,
-        fault_detection_period: 100,
+        fault_detection_interval: 100,
         ..Default::default()
     };
 
