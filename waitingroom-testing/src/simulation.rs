@@ -97,9 +97,9 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
             }
         }
 
-        if [50, 31, 799].contains(&time_provider.get_now_time()) {
-            debug_print_qpid_info_for_nodes(&nodes);
-        }
+        // if [50, 31, 799].contains(&time_provider.get_now_time()) {
+        //     debug_print_qpid_info_for_nodes(&nodes);
+        // }
 
         process_messages(&mut nodes, &network_random_provider);
 
@@ -112,6 +112,7 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
         if !past_initialisation {
             log::info!("Past initialisation");
             past_initialisation = true;
+            debug_print_qpid_info_for_nodes(&nodes);
         }
 
         call_timer_functions(&mut nodes, time_provider, &settings);
