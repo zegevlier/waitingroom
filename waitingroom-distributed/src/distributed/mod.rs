@@ -62,6 +62,9 @@ where
     qpid_parent: Option<NodeId>,
     /// The QPID weight table is a list of all the neighbours of this node, and their current "weights".
     qpid_weight_table: WeightTable,
+    /// Monotonically increasing counter for the QPID update and FindRoot messages sent to each node.
+    /// This is used to determine whether a message is outdated or not.
+    qpid_update_iterations: Vec<(NodeId, u64)>,
 
     // Also see count.rs
     /// The count parent is the ID of the parent node in the count tree.
@@ -367,14 +370,17 @@ where
         // This function only redirects the messages to the correct handler.
         if let Some(message) = self.network_handle.receive_message()? {
             match message.message {
-                NodeToNodeMessage::QPIDUpdateMessage(weight) => {
-                    self.qpid_handle_update(message.from_node, weight)
+                NodeToNodeMessage::QPIDUpdateMessage { weight, updated_iteration } => {
+                    self.qpid_handle_update(message.from_node, weight, updated_iteration)
                 }
                 NodeToNodeMessage::QPIDDeleteMin => self.qpid_delete_min(),
                 NodeToNodeMessage::QPIDFindRootMessage {
                     weight,
                     last_eviction,
-                } => self.qpid_handle_find_root(message.from_node, weight, last_eviction),
+                    updated_iteration,
+                } => {
+                    self.qpid_handle_find_root(message.from_node, weight, last_eviction, updated_iteration)
+                }
                 NodeToNodeMessage::CountRequest(count_iteration) => {
                     self.count_request(message.from_node, count_iteration)
                 }
@@ -442,6 +448,7 @@ where
             local_queue_leaving_list: vec![],
             count_responses: vec![],
             fd_queue: vec![],
+            qpid_update_iterations: vec![],
             count_iteration: Time::MIN,
             fd_last_check_time: Time::MIN,
             count_parent: None,
@@ -470,7 +477,7 @@ where
         }
         // We only call QPID insert if the current join time is less than the current QPID weight.
         // This means that all inserts that are *not* at the front of the queue don't make any QPID messages, which is nice.
-        if ticket.join_time < self.qpid_weight_table.get(self.node_id).unwrap() {
+        if ticket.join_time < self.qpid_weight_table.get_weight(self.node_id).unwrap() {
             self.qpid_insert(ticket.join_time)?;
         }
         Ok(())

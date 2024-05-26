@@ -16,7 +16,7 @@ where
 {
     pub fn join_at(&mut self, at: NodeId) -> Result<(), WaitingRoomError> {
         log::debug!("[{}] Joining at {}", self.node_id, at);
-        self.qpid_weight_table.set(self.node_id, Time::MAX);
+        self.qpid_weight_table.set(self.node_id, Time::MAX, 0);
         self.network_handle
             .send_message(at, NodeToNodeMessage::NodeJoin(self.node_id))?;
         Ok(())
@@ -35,7 +35,7 @@ where
         log::debug!("[{}] Initialising alone", self.node_id);
         self.tree_iteration += 1;
         self.qpid_parent = Some(self.node_id);
-        self.qpid_weight_table.set(self.node_id, Time::MAX);
+        self.qpid_weight_table.set(self.node_id, Time::MAX, 0);
         Ok(())
     }
 
@@ -220,7 +220,7 @@ where
                 // We still add them, so they get an update if they need it. We don't count them though, since
                 // nothing on our side changed.
                 self.add_neighbour(neighbour)?;
-                if self.qpid_weight_table.get(neighbour).is_none() {
+                if self.qpid_weight_table.get_weight(neighbour).is_none() {
                     any_added = true;
                 }
             }
@@ -267,8 +267,12 @@ where
         log::debug!("[{}] Adding neighbour {}", self.node_id, neighbour);
         // Now, we send an update message to our new neighbour.
         let weight = self.qpid_weight_table.compute_weight(neighbour);
+        let updated_iteration = self.get_update_iteration(neighbour);
         self.network_handle
-            .send_message(neighbour, NodeToNodeMessage::QPIDUpdateMessage(weight))?;
+            .send_message(neighbour, NodeToNodeMessage::QPIDUpdateMessage {
+                weight,
+                updated_iteration
+            })?;
 
         Ok(())
     }

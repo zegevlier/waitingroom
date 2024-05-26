@@ -3,10 +3,14 @@ use waitingroom_spanning_trees::SpanningTree;
 
 #[derive(Debug, Clone)]
 pub enum NodeToNodeMessage {
-    QPIDUpdateMessage(Time),
+    QPIDUpdateMessage {
+        weight: Time,
+        updated_iteration: u64,
+    },
     QPIDDeleteMin,
     QPIDFindRootMessage {
         weight: Time,
+        updated_iteration: u64,
         last_eviction: Time,
     },
     CountRequest(Time),

@@ -29,17 +29,22 @@ where
         let old_w_v_parent_v = self
             .qpid_weight_table
             .compute_weight(self.qpid_parent.unwrap());
-        self.qpid_weight_table.set(self.node_id, weight);
+        self.qpid_weight_table
+            .set(self.node_id, weight, 0);
 
         if self.qpid_parent.unwrap() != self.node_id {
             let new_w_v_parent_v = self
                 .qpid_weight_table
                 .compute_weight(self.qpid_parent.unwrap());
             if new_w_v_parent_v != old_w_v_parent_v {
+                let updated_iteration = self.get_update_iteration(self.qpid_parent.unwrap());
                 self.network_handle
                     .send_message(
                         self.qpid_parent.unwrap(),
-                        NodeToNodeMessage::QPIDUpdateMessage(new_w_v_parent_v),
+                        NodeToNodeMessage::QPIDUpdateMessage {
+                            weight: new_w_v_parent_v,
+                            updated_iteration,
+                        },
                     )
                     .unwrap();
             }
@@ -54,6 +59,7 @@ where
         &mut self,
         from_node: NodeId,
         weight: Time,
+        update_iteration: u64,
     ) -> Result<(), WaitingRoomError> {
         log::info!("[NODE {}] handle update", self.node_id);
 
@@ -63,7 +69,7 @@ where
             None
         };
 
-        self.qpid_weight_table.set(from_node, weight);
+        self.qpid_weight_table.set(from_node, weight, update_iteration);
 
         if self.qpid_parent.is_none() {
             // QPID is uninitialized. This is either when a network change happened, or when we haven't initialized at all yet.
@@ -81,15 +87,17 @@ where
         }
 
         if self.qpid_parent.unwrap() == self.node_id {
-            if weight < self.qpid_weight_table.get(self.node_id).unwrap() {
+            if weight < self.qpid_weight_table.get_weight(self.node_id).unwrap() {
                 self.qpid_parent = Some(from_node);
                 let w_v_u = self.qpid_weight_table.compute_weight(from_node);
+                let updated_iteration = self.get_update_iteration(from_node);
                 self.network_handle
                     .send_message(
                         from_node,
                         NodeToNodeMessage::QPIDFindRootMessage {
                             weight: w_v_u,
                             last_eviction: self.count_iteration,
+                            updated_iteration,
                         },
                     )
                     .unwrap()
@@ -99,10 +107,14 @@ where
                 .qpid_weight_table
                 .compute_weight(self.qpid_parent.unwrap());
             if new_w_v_parent_v != old_w_v_parent_v.unwrap() {
+                let updated_iteration = self.get_update_iteration(self.qpid_parent.unwrap());
                 self.network_handle
                     .send_message(
                         self.qpid_parent.unwrap(),
-                        NodeToNodeMessage::QPIDUpdateMessage(new_w_v_parent_v),
+                        NodeToNodeMessage::QPIDUpdateMessage {
+                            weight: new_w_v_parent_v,
+                            updated_iteration,
+                        },
                     )
                     .unwrap()
             }
@@ -135,11 +147,18 @@ where
         // Update current QPID weight
         match self.local_queue.peek() {
             Some(next_ticket) => {
-                self.qpid_weight_table
-                    .set(self.node_id, next_ticket.join_time);
+                self.qpid_weight_table.set(
+                    self.node_id,
+                    next_ticket.join_time,
+                    0,
+                );
             }
             None => {
-                self.qpid_weight_table.set(self.node_id, Time::MAX);
+                self.qpid_weight_table.set(
+                    self.node_id,
+                    Time::MAX,
+                    0,
+                );
             }
         }
 
@@ -148,12 +167,14 @@ where
             self.qpid_parent = Some(new_parent);
             if new_parent != self.node_id {
                 let updated_weight = self.qpid_weight_table.compute_weight(new_parent);
+                let updated_iteration = self.get_update_iteration(new_parent);
                 self.network_handle
                     .send_message(
                         new_parent,
                         NodeToNodeMessage::QPIDFindRootMessage {
                             weight: updated_weight,
                             last_eviction: self.count_iteration,
+                            updated_iteration,
                         },
                     )
                     .unwrap();
@@ -185,6 +206,7 @@ where
         from_node: NodeId,
         weight: Time,
         last_eviction: Time,
+        updated_iteration: u64,
     ) -> Result<(), WaitingRoomError> {
         log::info!("[NODE {}] handle find root", self.node_id);
 
@@ -194,19 +216,21 @@ where
             // return Err(WaitingRoomError::QPIDNotInitialized);
         }
 
-        self.qpid_weight_table.set(from_node, weight);
+        self.qpid_weight_table.set(from_node, weight, updated_iteration);
         self.qpid_parent = self.qpid_weight_table.get_smallest();
         if self.qpid_parent.unwrap() != self.node_id {
             let w_v_parent_v = self
                 .qpid_weight_table
                 .compute_weight(self.qpid_parent.unwrap());
 
+            let updated_iteration = self.get_update_iteration(self.qpid_parent.unwrap());
             self.network_handle
                 .send_message(
                     self.qpid_parent.unwrap(),
                     NodeToNodeMessage::QPIDFindRootMessage {
                         weight: w_v_parent_v,
                         last_eviction,
+                        updated_iteration,
                     },
                 )
                 .unwrap()
@@ -256,5 +280,20 @@ where
             self.qpid_parent = Some(self.spanning_tree.towards_lowest_id(self.node_id));
         }
         true
+    }
+
+    /// This returns the current update iteration, and increases it by one.
+    pub(crate) fn get_update_iteration(&mut self, node_id: NodeId) -> u64 {
+        self.qpid_update_iterations
+            .iter_mut()
+            .find(|(id, _)| *id == node_id)
+            .map(|(_, iteration)| {
+                *iteration += 1;
+                *iteration
+            })
+            .unwrap_or_else(|| {
+                self.qpid_update_iterations.push((node_id, 0));
+                0
+            })
     }
 }
