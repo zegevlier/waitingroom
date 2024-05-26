@@ -56,6 +56,11 @@ impl User {
         self.user_state = UserState::AbandonedQueue;
     }
 
+    pub fn start_refreshing(&mut self) {
+        self.next_action = UserAction::Refresh;
+        self.next_action_time = Time::MIN;
+    }
+
     pub fn get_eviction_time(&self) -> Option<Time> {
         self.pass.as_ref().map(|pass| pass.eviction_time)
     }

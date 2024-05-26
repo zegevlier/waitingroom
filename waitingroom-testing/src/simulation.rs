@@ -20,8 +20,8 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
     let node_count = 8;
 
     let settings = GeneralWaitingRoomSettings {
-        min_user_count: 20000,
-        max_user_count: 25000,
+        min_user_count: 200,
+        max_user_count: 250,
         ticket_refresh_time: 6000,
         ticket_expiry_time: 20000,
         pass_expiry_time: 0,
@@ -69,6 +69,8 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
     // We initialize the network with the nodes.
     nodes[0].initialise_alone().unwrap();
 
+    let mut next_node_id = nodes.len();
+
     // We add the other nodes to the network.
     for node in nodes.iter_mut().skip(1) {
         node.join_at(0).unwrap();
@@ -82,6 +84,18 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
     loop {
         // Each iteration of the loop is one time step.
         time_provider.increase_by(1);
+
+        // We'll check if we're in all the right states.
+        // If we're not, this function will panic.
+        match check_consistent_state(&nodes, &network, &settings) {
+            Ok(_) => {}
+            Err(error) => {
+                log::error!("Inconsistent state, {:?}", error);
+                log::error!("Time: {}", time_provider.get_now_time());
+                debug_print_qpid_info_for_nodes(&nodes);
+                return;
+            }
+        }
 
         if [50, 31, 799].contains(&time_provider.get_now_time()) {
             debug_print_qpid_info_for_nodes(&nodes);
@@ -102,18 +116,6 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
 
         call_timer_functions(&mut nodes, time_provider, &settings);
 
-        // We'll check if we're in all the right states.
-        // If we're not, this function will panic.
-        match check_consistent_state(&nodes, &network) {
-            Ok(_) => {}
-            Err(error) => {
-                log::error!("Inconsistent state, {:?}", error);
-                log::error!("Time: {}", time_provider.get_now_time());
-                debug_print_qpid_info_for_nodes(&nodes);
-                return;
-            }
-        }
-
         do_user_actions(
             &mut users,
             &mut nodes,
@@ -121,12 +123,46 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
             time_provider,
         );
 
-        if disturbance_random_provider.random_u64() % 20 == 0 {
+        if disturbance_random_provider.random_u64() % 200 == 0 {
             // We add a new user to a random node.
             let node_index = disturbance_random_provider.random_u64() as usize % nodes.len();
-            let ticket = nodes[node_index].join().unwrap();
+            match nodes[node_index].join() {
+                Ok(ticket) => {
+                    users.push(User::new_refreshing(ticket));
+                }
+                Err(err) => match err {
+                    waitingroom_core::WaitingRoomError::QPIDNotInitialized => {
+                        // We tried to join at a node that wasn't ready yet, so we'll just ignore this for now.
+                    }
+                    _ => {
+                        panic!("Unexpected error: {:?}", err);
+                    }
+                },
+            };
+        }
 
-            users.push(User::new_refreshing(ticket));
+        if disturbance_random_provider.random_u64() % 5000 == 0 {
+            // Kill a node.
+            if !nodes.len() == 1 {
+                // We don't want to kill the last node.
+                let node_index = disturbance_random_provider.random_u64() as usize % nodes.len();
+                log::warn!("Killing node {}", node_index);
+                nodes.remove(node_index);
+                // The network should be able to recover from this without any issues.
+            }
+        }
+
+        if disturbance_random_provider.random_u64() % 5000 == 0 {
+            // Add a node
+            nodes.push(waitingroom_distributed::DistributedWaitingRoom::new(
+                settings,
+                next_node_id,
+                time_provider.clone(),
+                node_random_provider.clone(),
+                network.clone(),
+            ));
+            next_node_id += 1;
+            nodes.last_mut().unwrap().join_at(0).unwrap();
         }
 
         // We'll stop the network after a number of time steps.
@@ -222,7 +258,16 @@ fn do_user_actions(
                 }
                 UserAction::Leave => {
                     let ticket = user.take_ticket();
-                    let pass = nodes[ticket.node_id].leave(ticket).unwrap();
+                    let node = match nodes.iter_mut().find(|n| n.get_node_id() == ticket.node_id) {
+                        Some(n) => n,
+                        None => {
+                            // The node is gone, so we can't leave.
+                            // We'll need to rejoin at another node.
+                            user.start_refreshing();
+                            continue;
+                        }
+                    };
+                    let pass = node.leave(ticket).unwrap();
                     user.set_pass(pass);
                     // TODO: Add that the user can refresh the pass
                 }

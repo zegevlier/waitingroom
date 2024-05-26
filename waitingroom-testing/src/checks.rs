@@ -1,4 +1,4 @@
-use waitingroom_core::network::DummyNetwork;
+use waitingroom_core::{network::DummyNetwork, settings::GeneralWaitingRoomSettings};
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
 use crate::{user::User, Node};
@@ -7,11 +7,13 @@ use crate::{user::User, Node};
 pub enum InvariantCheckError {
     QpidNode,
     SingleRoot,
+    TooManyOnSite,
 }
 
 pub fn check_consistent_state(
     nodes: &[Node],
     network: &DummyNetwork<NodeToNodeMessage>,
+    settings: &GeneralWaitingRoomSettings,
 ) -> Result<(), InvariantCheckError> {
     if network.is_empty() {
         // The QPID invariant only makes sense to check if we have no network messages.
@@ -25,6 +27,11 @@ pub fn check_consistent_state(
     if !ensure_only_single_root(nodes) {
         return Err(InvariantCheckError::SingleRoot);
     }
+
+    if !ensure_no_more_than_n_onsite(nodes, settings.max_user_count) {
+        return Err(InvariantCheckError::TooManyOnSite);
+    }
+
     log::debug!("All invariants hold");
     Ok(())
 }
@@ -41,7 +48,10 @@ fn verify_qpid_invariant(nodes: &[Node]) -> bool {
 
         let w_v_parent_v = v.get_qpid_weight_table().compute_weight(parent_v);
 
-        let w_v = v.get_qpid_weight_table().get_weight(v.get_node_id()).unwrap();
+        let w_v = v
+            .get_qpid_weight_table()
+            .get_weight(v.get_node_id())
+            .unwrap();
 
         let mut min_weight = w_v;
 
@@ -92,6 +102,22 @@ fn ensure_only_single_root(nodes: &[Node]) -> bool {
                 log::error!("Root node: {}", node.get_node_id());
             }
         }
+        return false;
+    }
+    true
+}
+
+fn ensure_no_more_than_n_onsite(nodes: &[Node], max_users: usize) -> bool {
+    let mut onsite_count = 0;
+    for node in nodes {
+        onsite_count += node.get_local_on_site_count();
+    }
+    if onsite_count > max_users {
+        log::error!(
+            "There should be at most {} users on site. Found {} users on site.",
+            max_users,
+            onsite_count
+        );
         return false;
     }
     true

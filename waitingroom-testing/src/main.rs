@@ -68,8 +68,8 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
 }
 
 fn main() {
-    debug_run(1);
-    // testing_run(0..10000);
+    // debug_run(1);
+    testing_run(0..100);
 }
 
 #[allow(unused)]
