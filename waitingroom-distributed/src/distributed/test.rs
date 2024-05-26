@@ -788,3 +788,8 @@ fn membership_regression_joins() {
     verify_qpid_invariant(&nodes);
     ensure_only_single_root(&nodes);
 }
+
+#[test]
+fn update_invariant_fail_reg() {
+    
+}

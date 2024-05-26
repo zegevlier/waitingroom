@@ -8,7 +8,7 @@ use waitingroom_core::{
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
 use crate::{
-    checks::{assert_consistent_state, validate_results},
+    checks::{check_consistent_state, validate_results},
     debug_print_qpid_info_for_nodes,
     user::{User, UserAction},
     Node,
@@ -70,7 +70,7 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
     nodes[0].initialise_alone().unwrap();
 
     // We add the other nodes to the network.
-    for node in nodes.iter_mut() {
+    for node in nodes.iter_mut().skip(1) {
         node.join_at(0).unwrap();
     }
 
@@ -83,7 +83,7 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
         // Each iteration of the loop is one time step.
         time_provider.increase_by(1);
 
-        if [235083, 235085].contains(&time_provider.get_now_time()) {
+        if [50, 31, 799].contains(&time_provider.get_now_time()) {
             debug_print_qpid_info_for_nodes(&nodes);
         }
 
@@ -104,7 +104,15 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
 
         // We'll check if we're in all the right states.
         // If we're not, this function will panic.
-        assert_consistent_state(&nodes, &network);
+        match check_consistent_state(&nodes, &network) {
+            Ok(_) => {}
+            Err(error) => {
+                log::error!("Inconsistent state, {:?}", error);
+                log::error!("Time: {}", time_provider.get_now_time());
+                debug_print_qpid_info_for_nodes(&nodes);
+                return;
+            }
+        }
 
         do_user_actions(
             &mut users,

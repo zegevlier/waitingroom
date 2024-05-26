@@ -5,9 +5,16 @@ use waitingroom_spanning_trees::SpanningTree;
 pub enum NodeToNodeMessage {
     QPIDUpdateMessage(Time),
     QPIDDeleteMin,
-    QPIDFindRootMessage { weight: Time, last_eviction: Time },
+    QPIDFindRootMessage {
+        weight: Time,
+        last_eviction: Time,
+    },
     CountRequest(Time),
-    CountResponse(Time, usize),
+    CountResponse {
+        iteration: Time,
+        queue_count: usize,
+        on_site_count: usize,
+    },
     FaultDetectionRequest(Time),
     FaultDetectionResponse(Time),
     NodeAdded(NodeId, SpanningTree, usize),

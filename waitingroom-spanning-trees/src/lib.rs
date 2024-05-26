@@ -1,3 +1,5 @@
+use std::vec;
+
 use waitingroom_core::NodeId;
 
 type AdjacencyList = Vec<(NodeId, Vec<usize>)>;
@@ -54,6 +56,54 @@ impl SpanningTree {
 
     pub fn get_node_list(&self) -> Vec<NodeId> {
         self.adjacency_list.iter().map(|(id, _)| *id).collect()
+    }
+
+    /// This function finds the neighbour of the given node that is towards the node with the lowest ID in the tree.
+    pub fn towards_lowest_id(&self, node_id: NodeId) -> NodeId {
+        let lowest_id = self.adjacency_list.iter().map(|(id, _)| id).min().unwrap();
+        if node_id == *lowest_id {
+            return node_id;
+        }
+        // Since we're in a spanning tree, there is only one path to the "root" node.
+        // We just need to find the neighbor of `node_id` that is on the path to the node with the lowest ID.
+        // We don't know the order of the neighbours' IDs.
+        // If we start at node 3, and the lowest node is node 0, and to get from 3 to 0, we need to go 3 -> 4 -> 1 -> 0, we return 4.
+
+        let mut visited = vec![node_id];
+        let mut stack = vec![node_id];
+        let mut parents = Vec::new();
+
+        while let Some(current_node) = stack.pop() {
+            for neighbor in self.get_node(current_node).unwrap() {
+                if !visited.contains(neighbor) {
+                    stack.push(*neighbor);
+                    parents.push((current_node, *neighbor));
+                    visited.push(*neighbor);
+                    // We've found the path to the lowest node, so we can stop.
+                    if neighbor == lowest_id {
+                        stack.clear();
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Now we walk back from the lowest node to the node with the given ID.
+        let mut current_node = *lowest_id;
+        while current_node != node_id {
+            let parent = parents
+                .iter()
+                .find(|(_, child)| child == &current_node)
+                .unwrap()
+                .0;
+            current_node = parent;
+        }
+
+        parents
+            .iter()
+            .find(|(parent, _)| parent == &current_node)
+            .unwrap()
+            .1
     }
 
     /// Reconnect all nodes in the graph until there is only one connected component.

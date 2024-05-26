@@ -50,11 +50,15 @@ where
         } else {
             // If we don't have any neighbours, we can respond immediately.
             if self.node_id == from_node {
-                self.count_response(from_node, count_iteration, 0)?;
+                self.count_response(from_node, count_iteration, 0, 0)?;
             } else {
                 self.network_handle.send_message(
                     from_node,
-                    NodeToNodeMessage::CountResponse(count_iteration, self.get_on_site_count()),
+                    NodeToNodeMessage::CountResponse {
+                        iteration: count_iteration,
+                        queue_count: self.local_queue.len(),
+                        on_site_count: self.get_on_site_count(),
+                    },
                 )?;
             }
         }
@@ -67,14 +71,16 @@ where
         &mut self,
         from_node: NodeId,
         count_iteration: Time,
-        count: usize,
+        queue_count: usize,
+        on_site_count: usize,
     ) -> Result<(), WaitingRoomError> {
         log::info!(
-            "[NODE {}] count response fr: {} it: {} c: {}",
+            "[NODE {}] count response fr: {} it: {} q: {} s: {}",
             self.node_id,
             from_node,
             count_iteration,
-            count
+            queue_count,
+            on_site_count
         );
         if count_iteration != self.count_iteration {
             // This message isn't part of the current count iteration. Ignore it.
@@ -88,7 +94,8 @@ where
             return Ok(());
         }
 
-        self.count_responses.push((from_node, count));
+        self.count_responses
+            .push((from_node, queue_count, on_site_count));
 
         if self.count_responses.len()
             == self
@@ -99,28 +106,42 @@ where
                 .count()
         {
             // We have received all responses.
-            let others_count = self
+            let others_queue_count = self
                 .count_responses
                 .iter()
-                .map(|(_, count)| *count)
+                .map(|(_, queue_count, _)| (queue_count))
                 .sum::<usize>();
 
-            let own_count = self.get_on_site_count();
-            let total_count = others_count + own_count;
+            let others_on_site_count = self
+                .count_responses
+                .iter()
+                .map(|(_, _, on_site_count)| (on_site_count))
+                .sum::<usize>();
+
+            let total_queue_count = others_queue_count + self.local_queue.len();
+            let total_on_site_count = others_on_site_count + self.get_on_site_count();
 
             if Some(self.node_id) == self.count_parent {
                 // We are the count root, so we need to let users out of the queue.
                 log::debug!(
-                    "[NODE {}] count root with total count {}",
+                    "[NODE {}] count root with total count q: {} s: {}",
                     self.node_id,
-                    total_count
+                    total_queue_count,
+                    total_on_site_count,
                 );
-                self.ensure_correct_site_count(total_count)?;
+                self.ensure_correct_site_count(
+                    total_queue_count,
+                    total_on_site_count,
+                )?;
             } else {
                 // We are not the count parent node, so we need to send our total count to the parent node.
                 self.network_handle.send_message(
                     self.count_parent.unwrap(),
-                    NodeToNodeMessage::CountResponse(count_iteration, total_count),
+                    NodeToNodeMessage::CountResponse {
+                        iteration: count_iteration,
+                        queue_count: total_queue_count,
+                        on_site_count: total_on_site_count,
+                    },
                 )?;
             }
         }
