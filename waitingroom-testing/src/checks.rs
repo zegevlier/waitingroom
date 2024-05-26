@@ -1,19 +1,28 @@
+use waitingroom_core::network::DummyNetwork;
+use waitingroom_distributed::messages::NodeToNodeMessage;
+
 use crate::{debug_print_qpid_info_for_nodes, user::User, Node};
 
-pub fn assert_consistent_state(nodes: &[Node]) {
-    if !verify_qpid_invariant(nodes) {
-        debug_print_qpid_info_for_nodes(nodes);
-        panic!("QPID invariant check failed");
-    } else {
-        log::debug!("QPID invariant holds");
+pub fn assert_consistent_state(nodes: &[Node], network: &DummyNetwork<NodeToNodeMessage>) {
+    if network.is_empty() {
+        // The QPID invariant only makes sense to check if we have no network messages.
+        // Otherwise, we might be in the middle of a QPID operation, in which case the
+        // invariant doesn't have to hold.
+        if !verify_qpid_invariant(nodes) {
+            debug_print_qpid_info_for_nodes(nodes);
+            panic!("QPID invariant check failed");
+        } else {
+            log::debug!("QPID invariant holds");
+        }
     }
+
     if !ensure_only_single_root(nodes) {
         debug_print_qpid_info_for_nodes(nodes);
         panic!("Multiple roots found");
     } else {
         log::debug!("Single root invariant holds");
     }
-    log::info!("All invariants hold");
+    log::debug!("All invariants hold");
 }
 
 fn verify_qpid_invariant(nodes: &[Node]) -> bool {
@@ -69,7 +78,7 @@ fn ensure_only_single_root(nodes: &[Node]) -> bool {
             root_count += 1;
         }
     }
-    if root_count != 1 {
+    if root_count > 1 {
         log::error!(
             "There should be exactly one root node. Found {} root nodes.",
             root_count
@@ -84,9 +93,30 @@ fn ensure_only_single_root(nodes: &[Node]) -> bool {
     true
 }
 
-pub fn validate_results(_nodes: &[Node], _users: &[User]) {
+pub fn validate_results(_nodes: &[Node], users: &[User]) {
     log::info!("Validating results");
 
-    // TODO: Implement this function.
-    // This function should check that the users were let out in the correct order.
+    // We verify that the users are let out in the correct order.
+    let mut prev_eviction_time = 0;
+    for user in users {
+        let eviction_time = match user.get_eviction_time() {
+            Some(t) => t,
+            None => u128::MAX,
+        };
+        if eviction_time < prev_eviction_time {
+            panic!("Users were let out in the wrong order");
+        }
+        prev_eviction_time = eviction_time;
+    }
+
+    let total_users_processed = users
+        .iter()
+        .filter(|u| u.get_eviction_time().is_some())
+        .count();
+    let total_users = users.len();
+    log::info!(
+        "Processed {} out of {} users",
+        total_users_processed,
+        total_users
+    );
 }

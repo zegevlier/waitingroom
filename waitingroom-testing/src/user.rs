@@ -1,7 +1,7 @@
 use waitingroom_core::{pass::Pass, ticket::Ticket, time::Time};
 
+#[derive(Debug)]
 pub struct User {
-    id: u64,
     next_action_time: Time,
     next_action: UserAction,
     ticket: Option<Ticket>,
@@ -10,9 +10,8 @@ pub struct User {
 }
 
 impl User {
-    pub fn new_refreshing(id: u64, ticket: Ticket) -> Self {
+    pub fn new_refreshing(ticket: Ticket) -> Self {
         Self {
-            id,
             next_action_time: ticket.next_refresh_time,
             next_action: UserAction::Refresh,
             ticket: Some(ticket),
@@ -48,6 +47,7 @@ impl User {
 
     pub fn set_pass(&mut self, pass: Pass) {
         self.user_state = UserState::OnSite;
+        self.next_action = UserAction::Done;
         self.pass = Some(pass);
     }
 
@@ -55,15 +55,20 @@ impl User {
         self.next_action_time = Time::MAX; // We will never take another action.
         self.user_state = UserState::AbandonedQueue;
     }
+
+    pub fn get_eviction_time(&self) -> Option<Time> {
+        self.pass.as_ref().map(|pass| pass.eviction_time)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum UserAction {
     Refresh,
     Leave,
-    Abandon,
+    Done,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum UserState {
     InQueue,
     OnSite,

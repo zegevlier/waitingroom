@@ -200,11 +200,12 @@ where
             // They need to either check in at the correct node, or re-join the queue so they can leave at the correct node.
             return Err(WaitingRoomError::TicketAtWrongNode);
         }
-
-        if !self.local_queue_leaving_list.contains(&ticket) {
-            // The user is not allowed to leave the queue yet.
-            return Err(WaitingRoomError::TicketCannotLeaveYet);
-        }
+        // We need the ticket from the local queue leaving list, instead of the one passed in.
+        // This is because this one might have more updated information. (eg. eviction time)
+        let ticket = match self.local_queue_leaving_list.iter().find(|t| **t == ticket) {
+            Some(ticket) => *ticket,
+            None => return Err(WaitingRoomError::TicketCannotLeaveYet),
+        };
 
         // The user is allowed to leave the queue.
         // We remove the ticket from the queue leaving list.

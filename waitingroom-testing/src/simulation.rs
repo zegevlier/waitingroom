@@ -9,6 +9,7 @@ use waitingroom_distributed::messages::NodeToNodeMessage;
 
 use crate::{
     checks::{assert_consistent_state, validate_results},
+    debug_print_qpid_info_for_nodes,
     user::{User, UserAction},
     Node,
 };
@@ -19,11 +20,11 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
     let node_count = 8;
 
     let settings = GeneralWaitingRoomSettings {
-        min_user_count: 20,
-        max_user_count: 25,
+        min_user_count: 200,
+        max_user_count: 250,
         ticket_refresh_time: 6000,
         ticket_expiry_time: 20000,
-        pass_expiry_time: 20000,
+        pass_expiry_time: 0,
         fault_detection_period: 1000,
         fault_detection_timeout: 200,
         fault_detection_interval: 100,
@@ -77,12 +78,14 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
 
     let mut users = Vec::new();
 
-    let mut next_user_id = 0;
-
     // Now we start the network running.
     loop {
         // Each iteration of the loop is one time step.
         time_provider.increase_by(1);
+
+        if [235083, 235085].contains(&time_provider.get_now_time()) {
+            debug_print_qpid_info_for_nodes(&nodes);
+        }
 
         process_messages(&mut nodes, &network_random_provider);
 
@@ -101,7 +104,7 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
 
         // We'll check if we're in all the right states.
         // If we're not, this function will panic.
-        assert_consistent_state(&nodes);
+        assert_consistent_state(&nodes, &network);
 
         do_user_actions(
             &mut users,
@@ -110,17 +113,16 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
             time_provider,
         );
 
-        if disturbance_random_provider.random_u64() % 2000 == 0 {
+        if disturbance_random_provider.random_u64() % 200 == 0 {
             // We add a new user to a random node.
             let node_index = disturbance_random_provider.random_u64() as usize % nodes.len();
             let ticket = nodes[node_index].join().unwrap();
 
-            users.push(User::new_refreshing(next_user_id, ticket));
-            next_user_id += 1;
+            users.push(User::new_refreshing(ticket));
         }
 
         // We'll stop the network after a number of time steps.
-        if time_provider.get_now_time() > 10000 {
+        if time_provider.get_now_time() > 1000000 {
             break;
         }
     }
@@ -210,7 +212,7 @@ fn do_user_actions(
                     user.set_pass(pass);
                     // TODO: Add that the user can refresh the pass
                 }
-                UserAction::Abandon => {}
+                UserAction::Done => {}
             }
         }
         i += 1;

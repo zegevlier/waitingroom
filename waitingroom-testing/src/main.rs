@@ -28,6 +28,7 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
         .warn(fern::colors::Color::Yellow)
         .error(fern::colors::Color::Red);
 
+    #[allow(unused)]
     let file = OpenOptions::new()
         .write(true)
         .create(true)
@@ -60,7 +61,7 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
         })
         .level(logging_level)
         .chain(std::io::stdout())
-        .chain(file)
+        // .chain(file)
         .level_for("waitingroom_core::random", log::LevelFilter::Info)
         .apply()
         .unwrap();
