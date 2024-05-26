@@ -70,7 +70,7 @@ where
     /// Each "count" has an iteration number, which is used to determine which count is the most recent.
     count_iteration: Time,
     /// The count responses are used to store the responses from the neighbours in the count tree. They are aggregated sent to the parent when all responses are received.
-    count_responses: Vec<(NodeId, usize)>,
+    count_responses: Vec<(NodeId, usize, usize)>,
 
     /// This list includes all members of the network, also the ones that are not neighbours in the QPID network.
     network_members: Vec<NodeId>,
@@ -378,9 +378,11 @@ where
                 NodeToNodeMessage::CountRequest(count_iteration) => {
                     self.count_request(message.from_node, count_iteration)
                 }
-                NodeToNodeMessage::CountResponse(count_iteration, count) => {
-                    self.count_response(message.from_node, count_iteration, count)
-                }
+                NodeToNodeMessage::CountResponse {
+                    iteration,
+                    queue_count,
+                    on_site_count,
+                } => self.count_response(message.from_node, iteration, queue_count, on_site_count),
                 NodeToNodeMessage::FaultDetectionRequest(check_id) => {
                     self.fault_detection_request(message.from_node, check_id)
                 }
@@ -485,26 +487,32 @@ where
 
     /// This function triggers an amount of QPID dequeue operations. The amount is the waiting room's minimum user count minus the current user count, provided in the parameter.
     /// If there are too many users on the site, this function will add dummy users to the queue, which will be dequeued by the QPID algorithm and thus lower the user count on the site.
-    fn ensure_correct_site_count(&mut self, count: usize) -> Result<(), WaitingRoomError> {
+    fn ensure_correct_site_count(
+        &mut self,
+        queue_count: usize,
+        on_site_count: usize,
+    ) -> Result<(), WaitingRoomError> {
         log::info!("[NODE {}] let users out of queue", self.node_id);
-        if count < self.settings.min_user_count {
+        if on_site_count < self.settings.min_user_count {
+            let to_let_out = queue_count.min(self.settings.min_user_count - on_site_count);
             log::debug!(
                 "[NODE {}] not enough users on site, need to let {} users out of queue",
                 self.node_id,
-                self.settings.min_user_count - count
+                to_let_out
             );
-            for _ in 0..(self.settings.min_user_count - count) {
+            // There is no need to let out more users than there are in the queue.
+            for _ in 0..to_let_out {
                 self.qpid_delete_min()?;
             }
         }
 
-        if count > self.settings.max_user_count {
+        if on_site_count > self.settings.max_user_count {
             log::debug!(
                 "[NODE {}] too many users on site, need to add {} dummy users to the queue",
                 self.node_id,
-                count - self.settings.max_user_count
+                on_site_count - self.settings.max_user_count
             );
-            for _ in 0..(count - self.settings.max_user_count) {
+            for _ in 0..(on_site_count - self.settings.max_user_count) {
                 self.enqueue(Ticket::new_drain(self.node_id))?;
             }
         }

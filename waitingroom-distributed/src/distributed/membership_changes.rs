@@ -247,30 +247,12 @@ where
             );
             self.qpid_parent = Some(new_parent);
         }
-
         self.spanning_tree = tree;
 
-        // // Now we select our new parent.
-        // if !self.qpid_weight_table.any_not_max() {
-        //     // If all the weights are MAX, we don't have a good way to determine who the parent should be.
-        //     // We just set the parent to the smallest node in our neighbour list.
-        //     let new_parent = self
-        //         .qpid_weight_table
-        //         .all_neighbours()
-        //         .into_iter()
-        //         .min()
-        //         .unwrap();
-        //     log::debug!(
-        //         "[{}] All weights are MAX. New parent: {}",
-        //         self.node_id,
-        //         new_parent
-        //     );
-        //     self.qpid_parent = Some(new_parent);
-        // } else {
-        //     let new_parent = self.qpid_weight_table.get_smallest().unwrap();
-        //     log::debug!("[{}] New parent: {}", self.node_id, new_parent);
-        //     self.qpid_parent = Some(new_parent);
-        // }
+        // We'll see if we have all the information we need to set a new QPID parent. If we do, we'll set it.
+        if self.qpid_parent.is_none() {
+            self.heuristic_set_qpid_parent();
+        }
 
         Ok(())
     }

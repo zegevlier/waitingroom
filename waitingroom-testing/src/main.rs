@@ -68,12 +68,32 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
 }
 
 fn main() {
+    debug_run(72);
+    // testing_run(0..100);
+}
+
+#[allow(unused)]
+fn debug_run(seed: u64) {
     let logging_level = LevelFilter::Debug;
     let time_provider = DummyTimeProvider::new();
 
     initialise_logging(&time_provider, logging_level);
 
-    simulation::run(1, &time_provider, SimulationConfig {});
+    simulation::run(seed, &time_provider, SimulationConfig {});
+}
+
+#[allow(unused)]
+fn testing_run(seed_range: std::ops::Range<u64>) {
+    let logging_level = LevelFilter::Error;
+    let time_provider = DummyTimeProvider::new();
+
+    initialise_logging(&time_provider, logging_level);
+
+    for seed in seed_range {
+        time_provider.reset();
+        log::error!("Seed: {}", seed);
+        simulation::run(seed, &time_provider, SimulationConfig {});
+    }
 }
 
 fn debug_print_qpid_info_for_nodes(nodes: &[Node]) {

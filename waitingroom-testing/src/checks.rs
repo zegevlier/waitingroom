@@ -1,28 +1,32 @@
 use waitingroom_core::network::DummyNetwork;
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
-use crate::{debug_print_qpid_info_for_nodes, user::User, Node};
+use crate::{user::User, Node};
 
-pub fn assert_consistent_state(nodes: &[Node], network: &DummyNetwork<NodeToNodeMessage>) {
+#[derive(Debug)]
+pub enum InvariantCheckError {
+    QpidNode,
+    SingleRoot,
+}
+
+pub fn check_consistent_state(
+    nodes: &[Node],
+    network: &DummyNetwork<NodeToNodeMessage>,
+) -> Result<(), InvariantCheckError> {
     if network.is_empty() {
         // The QPID invariant only makes sense to check if we have no network messages.
         // Otherwise, we might be in the middle of a QPID operation, in which case the
         // invariant doesn't have to hold.
         if !verify_qpid_invariant(nodes) {
-            debug_print_qpid_info_for_nodes(nodes);
-            panic!("QPID invariant check failed");
-        } else {
-            log::debug!("QPID invariant holds");
+            return Err(InvariantCheckError::QpidNode);
         }
     }
 
     if !ensure_only_single_root(nodes) {
-        debug_print_qpid_info_for_nodes(nodes);
-        panic!("Multiple roots found");
-    } else {
-        log::debug!("Single root invariant holds");
+        return Err(InvariantCheckError::SingleRoot);
     }
     log::debug!("All invariants hold");
+    Ok(())
 }
 
 fn verify_qpid_invariant(nodes: &[Node]) -> bool {

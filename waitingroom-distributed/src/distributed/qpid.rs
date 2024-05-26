@@ -69,32 +69,9 @@ where
             // QPID is uninitialized. This is either when a network change happened, or when we haven't initialized at all yet.
             // If this message completes our QPID table, we can let it through. Otherwise, we need to wait for more messages.
 
-            if (self.qpid_weight_table.neighbour_count() + 1)
-                < self.spanning_tree.get_node(self.node_id).unwrap().len()
-            {
-                log::debug!(
-                    "[NODE {}] QPID not initialized yet. Waiting for more messages",
-                    self.node_id
-                );
-                // We don't have all the information yet. We need to wait for more messages.
+            if !self.heuristic_set_qpid_parent() {
+                // We didn't have enough information to set the QPID parent, so we can't do anything yet.
                 return Ok(());
-            }
-
-            // We have all the information we need. We can initialize QPID.
-            if self.qpid_weight_table.any_not_max() {
-                log::debug!("[NODE {}] Initializing QPID with values from weight table", self.node_id);
-                self.qpid_parent = Some(self.qpid_weight_table.get_smallest().unwrap());
-            } else {
-                log::debug!("[NODE {}] Initializing QPID with values from spanning tree", self.node_id);
-                // Otherwise, the lowest node id in our weight table is our parent.
-                self.qpid_parent = Some(
-                    *self
-                        .qpid_weight_table
-                        .all_neighbours()
-                        .iter()
-                        .min()
-                        .unwrap(),
-                );
             }
 
             old_w_v_parent_v = Some(
@@ -242,5 +219,42 @@ where
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn heuristic_set_qpid_parent(&mut self) -> bool {
+        if (self.qpid_weight_table.neighbour_count() + 1)
+            < self.spanning_tree.get_node(self.node_id).unwrap().len()
+            || self
+                .spanning_tree
+                .get_node(self.node_id)
+                .unwrap()
+                .is_empty()
+        // This is when we haven't even gotten the first spanning tree yet.
+        {
+            log::debug!(
+                "[NODE {}] QPID not initialized yet. Waiting for more messages",
+                self.node_id
+            );
+            // We don't have all the information yet. We need to wait for more messages.
+            return false;
+        }
+
+        log::debug!("[NODE {}] Heuristic set QPID parent", self.node_id);
+        // We have all the information we need. We can initialize QPID.
+        if self.qpid_weight_table.any_not_max() {
+            log::debug!(
+                "[NODE {}] Initializing QPID with values from weight table",
+                self.node_id
+            );
+            self.qpid_parent = Some(self.qpid_weight_table.get_smallest().unwrap());
+        } else {
+            log::debug!(
+                "[NODE {}] Initializing QPID with values from spanning tree",
+                self.node_id
+            );
+            // Otherwise, the value that will lead us to the lowest node ID is our parent.
+            self.qpid_parent = Some(self.spanning_tree.towards_lowest_id(self.node_id));
+        }
+        true
     }
 }

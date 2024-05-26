@@ -1,4 +1,8 @@
-use std::{fmt::Debug, ops::DerefMut, sync::{Arc, Mutex}};
+use std::{
+    fmt::Debug,
+    ops::DerefMut,
+    sync::{Arc, Mutex},
+};
 
 /// The type for time values. This is the number of milliseconds since the UNIX epoch.
 pub type Time = u128;
@@ -52,6 +56,11 @@ impl DummyTimeProvider {
         // log::debug!("Increasing dummy time by {}", amount);
         // self.time.set((*self.time).get() + amount);
         *self.time.lock().unwrap().deref_mut() += amount;
+    }
+
+    pub fn reset(&self) {
+        // self.time.set(Time::default());
+        *self.time.lock().unwrap().deref_mut() = Time::default();
     }
 }
 
