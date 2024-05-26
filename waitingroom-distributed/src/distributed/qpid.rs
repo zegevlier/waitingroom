@@ -153,7 +153,7 @@ where
             return Ok(());
         }
 
-        let ticket = self.dequeue().unwrap();
+        let mut ticket = self.dequeue().unwrap();
 
         // Update current QPID weight
         match self.local_queue.peek() {
@@ -185,6 +185,7 @@ where
 
         match ticket.ticket_type {
             TicketType::Normal => {
+                ticket.set_eviction_time(self.time_provider.get_now_time());
                 self.local_queue_leaving_list.push(ticket);
                 metrics::waitingroom::to_be_let_in_count(self.node_id).inc();
             }

@@ -769,7 +769,6 @@ fn membership_regression_joins() {
     // Now, we need to make sure that node 1 gets node 2's tree update, then all other messages are processed, then node 1 gets its own tree update.
     // A kind of hacky way we can do this is to just 1's tree update message. We'll add it back in later.
     let message = dummy_network.get_messages_mut().remove(0);
-    dbg!(&message);
 
     // Now we process all the other messages
     dummy_time_provider.increase_by(20);

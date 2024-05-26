@@ -20,6 +20,8 @@ pub struct Pass {
     pub pass_creation_time: Time,
     /// The time the pass expires if it is not refreshed.
     pub expiry_time: Time,
+    /// Eviction time is the time at which the user was let out of the queue.
+    pub eviction_time: Time,
 }
 
 impl Pass {
@@ -38,6 +40,7 @@ impl Pass {
             queue_join_time: ticket.join_time,
             pass_creation_time: now_time,
             expiry_time: now_time + pass_expiry_time,
+            eviction_time: ticket.eviction_time.unwrap(), // It should never be None.
         }
     }
 
@@ -55,6 +58,7 @@ impl Pass {
             identifier: self.identifier,
             queue_join_time: self.queue_join_time,
             pass_creation_time: self.pass_creation_time,
+            eviction_time: self.eviction_time,
         }
     }
 }

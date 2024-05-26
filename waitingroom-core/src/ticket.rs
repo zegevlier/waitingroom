@@ -45,6 +45,9 @@ pub struct Ticket {
     /// prevent them from seeing their position go up, as this would be very discouraging.
     /// Potentially, this could be made a configurable option in the future.
     pub previous_position_estimate: usize,
+    /// The eviction time is the time at which the user was let out of the queue. When they
+    /// call the refresh function after they have been let out, they'll be able to leave.
+    pub eviction_time: Option<Time>,
 }
 
 impl Ticket {
@@ -70,6 +73,7 @@ impl Ticket {
             node_id,
             previous_position_estimate: usize::MAX,
             ticket_type: TicketType::Normal,
+            eviction_time: None,
         }
     }
 
@@ -91,6 +95,7 @@ impl Ticket {
             node_id,
             previous_position_estimate: usize::MAX,
             ticket_type: TicketType::Normal,
+            eviction_time: None,
         }
     }
 
@@ -111,6 +116,7 @@ impl Ticket {
             node_id,
             previous_position_estimate: usize::MAX,
             ticket_type: TicketType::Drain,
+            eviction_time: None,
         }
     }
 
@@ -136,6 +142,7 @@ impl Ticket {
             node_id: self.node_id,
             previous_position_estimate: position_estimate,
             ticket_type: self.ticket_type,
+            eviction_time: self.eviction_time,
         }
     }
 
@@ -147,6 +154,11 @@ impl Ticket {
         let now_time = time_provider.get_now_time();
 
         self.expiry_time < now_time
+    }
+
+    /// Sets the eviction time to the given time.
+    pub fn set_eviction_time(&mut self, time: Time) {
+        self.eviction_time = Some(time);
     }
 }
 
