@@ -426,7 +426,7 @@ fn verify_qpid_invariant(nodes: &[Node]) {
 
         let w_v_parent_v = v.qpid_weight_table.compute_weight(parent_v);
 
-        let w_v = v.qpid_weight_table.get(v.node_id).unwrap();
+        let w_v = v.qpid_weight_table.get_weight(v.node_id).unwrap();
 
         let mut min_weight = w_v;
 
@@ -791,5 +791,5 @@ fn membership_regression_joins() {
 
 #[test]
 fn update_invariant_fail_reg() {
-    
+
 }

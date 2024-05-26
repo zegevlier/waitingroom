@@ -20,16 +20,16 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
     let node_count = 8;
 
     let settings = GeneralWaitingRoomSettings {
-        min_user_count: 200,
-        max_user_count: 250,
+        min_user_count: 20000,
+        max_user_count: 25000,
         ticket_refresh_time: 6000,
         ticket_expiry_time: 20000,
         pass_expiry_time: 0,
         fault_detection_period: 1000,
         fault_detection_timeout: 200,
         fault_detection_interval: 100,
-        eviction_interval: 5000,
-        cleanup_interval: 10000,
+        eviction_interval: 1000,
+        cleanup_interval: 1000,
     };
 
     // let latency = waitingroom_core::network::Latency::Fixed(10);
@@ -121,7 +121,7 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
             time_provider,
         );
 
-        if disturbance_random_provider.random_u64() % 200 == 0 {
+        if disturbance_random_provider.random_u64() % 20 == 0 {
             // We add a new user to a random node.
             let node_index = disturbance_random_provider.random_u64() as usize % nodes.len();
             let ticket = nodes[node_index].join().unwrap();
@@ -130,7 +130,7 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
         }
 
         // We'll stop the network after a number of time steps.
-        if time_provider.get_now_time() > 1000000 {
+        if time_provider.get_now_time() > 100000 {
             break;
         }
     }
@@ -195,7 +195,7 @@ fn call_timer_functions(
 fn do_user_actions(
     users: &mut [User],
     nodes: &mut [Node],
-    _random_provider: &DeterministicRandomProvider, // We don't use this yet, but once we add a bit more randomness to the user actions, we will.
+    random_provider: &DeterministicRandomProvider, // We don't use this yet, but once we add a bit more randomness to the user actions, we will.
     time_provider: &DummyTimeProvider,
 ) {
     let now = time_provider.get_now_time();
@@ -208,11 +208,17 @@ fn do_user_actions(
             match user.get_action() {
                 UserAction::Refresh => {
                     let ticket = user.take_ticket();
-                    let checkin_response = nodes[ticket.node_id].check_in(ticket).unwrap();
-                    user.refresh_ticket(
-                        checkin_response.position_estimate,
-                        checkin_response.new_ticket,
-                    );
+                    let (ticket, position_estimate) = nodes
+                        .iter_mut()
+                        .find(|n| n.get_node_id() == ticket.node_id)
+                        .map(|n| n.check_in(ticket).unwrap())
+                        .map(|cr| (cr.new_ticket, Some(cr.position_estimate)))
+                        .unwrap_or_else(|| {
+                            // The node is gone, so we need to re-join the queue at another node.
+                            let new_node_id = random_provider.random_u64() as usize % nodes.len();
+                            (nodes[new_node_id].join().unwrap(), None)
+                        });
+                    user.refresh_ticket(position_estimate.unwrap_or(1), ticket);
                 }
                 UserAction::Leave => {
                     let ticket = user.take_ticket();

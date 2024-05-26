@@ -41,7 +41,7 @@ fn verify_qpid_invariant(nodes: &[Node]) -> bool {
 
         let w_v_parent_v = v.get_qpid_weight_table().compute_weight(parent_v);
 
-        let w_v = v.get_qpid_weight_table().get(v.get_node_id()).unwrap();
+        let w_v = v.get_qpid_weight_table().get_weight(v.get_node_id()).unwrap();
 
         let mut min_weight = w_v;
 
@@ -101,6 +101,7 @@ pub fn validate_results(_nodes: &[Node], users: &[User]) {
     log::info!("Validating results");
 
     // We verify that the users are let out in the correct order.
+    // dbg!(&users);
     let mut prev_eviction_time = 0;
     for user in users {
         let eviction_time = match user.get_eviction_time() {
