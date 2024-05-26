@@ -322,6 +322,11 @@ where
         log::info!("[NODE {}] fault detection", self.node_id);
         let now_time = self.time_provider.get_now_time();
 
+        if self.network_members.len() <= 1 {
+            // If there is only one node in the network, we don't need to do fault detection.
+            return Ok(());
+        }
+
         // If we have a last check node, and we haven't had a response after the timeout, we consider the node to be down.
         if let Some(last_check_node) = self.fd_last_check_node {
             if now_time - self.fd_last_check_time > self.settings.fault_detection_timeout {
@@ -370,17 +375,21 @@ where
         // This function only redirects the messages to the correct handler.
         if let Some(message) = self.network_handle.receive_message()? {
             match message.message {
-                NodeToNodeMessage::QPIDUpdateMessage { weight, updated_iteration } => {
-                    self.qpid_handle_update(message.from_node, weight, updated_iteration)
-                }
+                NodeToNodeMessage::QPIDUpdateMessage {
+                    weight,
+                    updated_iteration,
+                } => self.qpid_handle_update(message.from_node, weight, updated_iteration),
                 NodeToNodeMessage::QPIDDeleteMin => self.qpid_delete_min(),
                 NodeToNodeMessage::QPIDFindRootMessage {
                     weight,
                     last_eviction,
                     updated_iteration,
-                } => {
-                    self.qpid_handle_find_root(message.from_node, weight, last_eviction, updated_iteration)
-                }
+                } => self.qpid_handle_find_root(
+                    message.from_node,
+                    weight,
+                    last_eviction,
+                    updated_iteration,
+                ),
                 NodeToNodeMessage::CountRequest(count_iteration) => {
                     self.count_request(message.from_node, count_iteration)
                 }

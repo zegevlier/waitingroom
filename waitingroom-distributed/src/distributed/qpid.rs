@@ -4,7 +4,7 @@ use waitingroom_core::{
     random::RandomProvider,
     ticket::TicketType,
     time::{Time, TimeProvider},
-    NodeId, WaitingRoomError,
+    NodeId, WaitingRoomError, WaitingRoomTimerTriggered,
 };
 
 use crate::{messages::NodeToNodeMessage, DistributedWaitingRoom};
@@ -239,7 +239,7 @@ where
             // We need to trigger a new eviction if the last eviction was too long ago.
             let now = self.time_provider.get_now_time();
             if now - last_eviction > self.settings.eviction_interval + BUFFER_TIME {
-                self.qpid_delete_min()?;
+                self.eviction()?;
             }
         }
         Ok(())

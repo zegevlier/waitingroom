@@ -57,7 +57,7 @@ where
                     NodeToNodeMessage::CountResponse {
                         iteration: count_iteration,
                         queue_count: self.local_queue.len(),
-                        on_site_count: self.get_on_site_count(),
+                        on_site_count: self.get_local_on_site_count(),
                     },
                 )?;
             }
@@ -119,7 +119,7 @@ where
                 .sum::<usize>();
 
             let total_queue_count = others_queue_count + self.local_queue.len();
-            let total_on_site_count = others_on_site_count + self.get_on_site_count();
+            let total_on_site_count = others_on_site_count + self.get_local_on_site_count();
 
             if Some(self.node_id) == self.count_parent {
                 // We are the count root, so we need to let users out of the queue.
@@ -150,7 +150,7 @@ where
     }
 
     /// Get the number of users currently on the site, including the ones that are about to leave the queue.
-    pub(super) fn get_on_site_count(&self) -> usize {
+    pub fn get_local_on_site_count(&self) -> usize {
         self.local_on_site_list.len() + self.local_queue_leaving_list.len()
     }
 }
