@@ -235,8 +235,11 @@ where
             self.qpid_parent = None; // We don't know who the parent should be, so we set it to None.
         } else if any_added {
             // We've only added neighbours. We need to wait for the updates from the new neighbours.
-            log::debug!("[{}] Added neighbours. Waiting for updates.", self.node_id);
-            self.qpid_parent = None; // We don't know who the parent should be, so we set it to None.
+            log::debug!(
+                "[{}] Only added neighbours, not doing anything",
+                self.node_id
+            );
+            // self.qpid_parent = None; // We don't know who the parent should be, so we set it to None.
         } else if any_removed {
             // We've only removed neighbours. We can just recompute the parent.
             let new_parent = self.qpid_weight_table.get_smallest().unwrap();
@@ -268,11 +271,13 @@ where
         // Now, we send an update message to our new neighbour.
         let weight = self.qpid_weight_table.compute_weight(neighbour);
         let updated_iteration = self.get_update_iteration(neighbour);
-        self.network_handle
-            .send_message(neighbour, NodeToNodeMessage::QPIDUpdateMessage {
+        self.network_handle.send_message(
+            neighbour,
+            NodeToNodeMessage::QPIDUpdateMessage {
                 weight,
-                updated_iteration
-            })?;
+                updated_iteration,
+            },
+        )?;
 
         Ok(())
     }
