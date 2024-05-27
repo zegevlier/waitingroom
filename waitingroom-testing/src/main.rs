@@ -28,13 +28,13 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
         .warn(fern::colors::Color::Yellow)
         .error(fern::colors::Color::Red);
 
-    #[allow(unused)]
-    let file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open("output.log")
-        .unwrap();
+    // #[allow(unused)]
+    // let file = OpenOptions::new()
+    //     .write(true)
+    //     .create(true)
+    //     .truncate(true)
+    //     .open("output.log")
+    //     .unwrap();
 
     let time_provider_fern = time_provider.clone();
     fern::Dispatch::new()
@@ -68,8 +68,8 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
 }
 
 fn main() {
-    // debug_run(1);
-    testing_run(0..100);
+    // debug_run(878);
+    testing_run(0..10000);
 }
 
 #[allow(unused)]
