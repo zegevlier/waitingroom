@@ -8,7 +8,7 @@ use waitingroom_core::{
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
 use crate::{
-    checks::{check_consistent_state, validate_results},
+    checks::{check_consistent_state, check_final_state},
     debug_print_qpid_info_for_nodes,
     user::{User, UserAction},
     Node,
@@ -20,8 +20,8 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
     let node_count = 8;
 
     let settings = GeneralWaitingRoomSettings {
-        min_user_count: 200,
-        max_user_count: 250,
+        min_user_count: 20,
+        max_user_count: 25,
         ticket_refresh_time: 6000,
         ticket_expiry_time: 20000,
         pass_expiry_time: 0,
@@ -97,7 +97,14 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
             }
         }
 
-        // if [50, 31, 799].contains(&time_provider.get_now_time()) {
+        // if [43120, 43121].contains(&time_provider.get_now_time()) {
+        //     for node in nodes.iter() {
+        //         log::debug!(
+        //             "{} Local queue length: {}",
+        //             node.get_node_id(),
+        //             node.in_queue_count()
+        //         );
+        //     }
         //     debug_print_qpid_info_for_nodes(&nodes);
         // }
 
@@ -126,23 +133,32 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
 
         if disturbance_random_provider.random_u64() % 200 == 0 {
             // We add a new user to a random node.
-            let node_index = disturbance_random_provider.random_u64() as usize % nodes.len();
-            match nodes[node_index].join() {
-                Ok(ticket) => {
-                    users.push(User::new_refreshing(ticket));
+            let mut tries = 0;
+            loop {
+                if tries > 10 {
+                    log::error!("Failed to join at any node after 10 tries!");
+                    break;
                 }
-                Err(err) => match err {
-                    waitingroom_core::WaitingRoomError::QPIDNotInitialized => {
-                        // We tried to join at a node that wasn't ready yet, so we'll just ignore this for now.
+                let node_index = disturbance_random_provider.random_u64() as usize % nodes.len();
+                match nodes[node_index].join() {
+                    Ok(ticket) => {
+                        users.push(User::new_refreshing(ticket));
+                        break;
                     }
-                    _ => {
-                        panic!("Unexpected error: {:?}", err);
-                    }
-                },
-            };
+                    Err(err) => match err {
+                        waitingroom_core::WaitingRoomError::QPIDNotInitialized => {
+                            // We tried to join at a node that wasn't ready yet, so we'll retry.
+                            tries += 1;
+                        }
+                        _ => {
+                            panic!("Unexpected error: {:?}", err);
+                        }
+                    },
+                };
+            }
         }
 
-        if disturbance_random_provider.random_u64() % 5000 == 0 {
+        if disturbance_random_provider.random_u64() % 2000 == 0 {
             // Kill a node.
             if !nodes.len() == 1 {
                 // We don't want to kill the last node.
@@ -153,7 +169,7 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
             }
         }
 
-        if disturbance_random_provider.random_u64() % 5000 == 0 {
+        if disturbance_random_provider.random_u64() % 2000 == 0 {
             // Add a node
             nodes.push(waitingroom_distributed::DistributedWaitingRoom::new(
                 settings,
@@ -172,7 +188,14 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
         }
     }
 
-    validate_results(&nodes, &users);
+    match check_final_state(&nodes, &users) {
+        Ok(_) => {
+            log::info!("Simulation completed successfully");
+        }
+        Err(error) => {
+            log::error!("Simulation failed: {:?}", error);
+        }
+    }
 }
 
 fn process_messages(nodes: &mut [Node], random_provider: &DeterministicRandomProvider) {

@@ -1,4 +1,4 @@
-use waitingroom_core::{network::DummyNetwork, settings::GeneralWaitingRoomSettings};
+use waitingroom_core::{network::DummyNetwork, settings::GeneralWaitingRoomSettings, time::Time};
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
 use crate::{user::User, Node};
@@ -8,6 +8,11 @@ pub enum InvariantCheckError {
     QpidNode,
     SingleRoot,
     TooManyOnSite,
+}
+
+#[derive(Debug)]
+pub enum FinalStateCheckError {
+    UsersWrongOrder(usize, Time, Time),
 }
 
 pub fn check_consistent_state(
@@ -123,19 +128,23 @@ fn ensure_no_more_than_n_onsite(nodes: &[Node], max_users: usize) -> bool {
     true
 }
 
-pub fn validate_results(_nodes: &[Node], users: &[User]) {
+pub fn check_final_state(_nodes: &[Node], users: &[User]) -> Result<(), FinalStateCheckError> {
     log::info!("Validating results");
 
     // We verify that the users are let out in the correct order.
     // dbg!(&users);
     let mut prev_eviction_time = 0;
-    for user in users {
+    for (i, user) in users.iter().enumerate() {
         let eviction_time = match user.get_eviction_time() {
             Some(t) => t,
             None => u128::MAX,
         };
         if eviction_time < prev_eviction_time {
-            panic!("Users were let out in the wrong order");
+            return Err(FinalStateCheckError::UsersWrongOrder(
+                i,
+                prev_eviction_time,
+                eviction_time,
+            ));
         }
         prev_eviction_time = eviction_time;
     }
@@ -150,4 +159,5 @@ pub fn validate_results(_nodes: &[Node], users: &[User]) {
         total_users_processed,
         total_users
     );
+    Ok(())
 }
