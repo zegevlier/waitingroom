@@ -2,7 +2,6 @@ use pass::Pass;
 use ticket::Ticket;
 
 mod error;
-pub mod metrics;
 pub mod network;
 pub mod pass;
 pub mod random;
@@ -87,22 +86,4 @@ pub trait WaitingRoomMessageTriggered {
 pub enum Identification {
     Ticket(Ticket),
     Pass(Pass),
-}
-
-/// This utility function works like retain, except it counts the number of elements removed.
-/// There is probably a better solution for this.
-pub fn retain_with_count<T, F>(vec: &mut Vec<T>, condition: F) -> u64
-where
-    F: Fn(&T) -> bool,
-{
-    let mut removed_count = 0;
-    vec.retain(|v| {
-        if condition(v) {
-            true
-        } else {
-            removed_count += 1;
-            false
-        }
-    });
-    removed_count
 }

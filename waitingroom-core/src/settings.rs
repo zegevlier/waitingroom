@@ -1,7 +1,4 @@
-use foundations::settings::settings;
-
-#[settings(impl_default = false)]
-#[derive(Copy)]
+#[derive(Clone, Debug, Copy)]
 pub struct GeneralWaitingRoomSettings {
     /// The minimum number of users that will be allowed on the site.
     /// If there are less than this number of users on the site,

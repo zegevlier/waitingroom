@@ -1,8 +1,7 @@
 use waitingroom_core::{
-    metrics,
     pass::Pass,
     random::RandomProvider,
-    retain_with_count, settings,
+    settings,
     ticket::{Ticket, TicketIdentifier, TicketType},
     time::TimeProvider,
     NodeId, WaitingRoomError, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered,
@@ -146,14 +145,22 @@ where
         // We remove the ticket from the queue leaving list.
         self.queue_leaving_list.retain(|t| t != &ticket);
         // We know the number of items removed here is always 1.
-        metrics::waitingroom::to_be_let_in_count(SELF_NODE_ID).dec();
+        metrics::gauge!(
+            "waitingroom.to_let_in_count",
+            &[("node", SELF_NODE_ID.to_string())]
+        )
+        .decrement(1);
 
         // Generate a pass for the user.
         let pass = Pass::from_ticket(ticket, self.settings.pass_expiry_time, &self.time_provider);
 
         // And add the pass to the users on site list.
         self.on_site_list.push(pass);
-        metrics::waitingroom::on_site_count(SELF_NODE_ID).inc();
+        metrics::gauge!(
+            "waitingroom.on_site_count",
+            &[("node", SELF_NODE_ID.to_string())]
+        )
+        .increment(1);
 
         Ok(pass)
     }
@@ -170,7 +177,11 @@ where
 
         if pass.node_id != SELF_NODE_ID {
             self.on_site_list.push(pass);
-            metrics::waitingroom::on_site_count(SELF_NODE_ID).inc();
+            metrics::gauge!(
+                "waitingroom.on_site_count",
+                &[("node", SELF_NODE_ID.to_string())]
+            )
+            .increment(1);
         }
 
         let pass = self
@@ -202,22 +213,30 @@ where
 
         // Remove expired tickets from the local queue.
         let removed_count = self.local_queue.remove_expired(now_time);
-        metrics::waitingroom::in_queue_count(SELF_NODE_ID).dec_by(removed_count);
+        metrics::gauge!(
+            "waitingroom.in_queue_count",
+            &[("node", SELF_NODE_ID.to_string())]
+        )
+        .decrement(removed_count as f64);
 
-        // Remove expired passes from the on site list.
-        let removed_count =
-            retain_with_count(&mut self.on_site_list, |pass| pass.expiry_time > now_time);
-        metrics::waitingroom::on_site_count(SELF_NODE_ID).dec_by(removed_count);
+        self.on_site_list.retain(|pass| pass.expiry_time > now_time);
+        metrics::gauge!(
+            "waitingroom.on_site_count",
+            &[("node", SELF_NODE_ID.to_string())]
+        )
+        .set(self.on_site_list.len() as f64);
 
         // TODO: Replace this with something in an operation queue.
         // This method should not be called inside another method.
         self.let_users_out_of_queue(removed_count as usize)?;
 
-        // Remove expired tickets from the queue leaving list.
-        let removed_count = retain_with_count(&mut self.queue_leaving_list, |ticket| {
-            ticket.expiry_time > now_time
-        });
-        metrics::waitingroom::to_be_let_in_count(SELF_NODE_ID).dec_by(removed_count);
+        self.queue_leaving_list
+            .retain(|ticket| ticket.expiry_time > now_time);
+        metrics::gauge!(
+            "waitingroom.to_let_in_count",
+            &[("node", SELF_NODE_ID.to_string())]
+        )
+        .set(self.queue_leaving_list.len() as f64);
 
         Ok(())
     }
@@ -283,7 +302,11 @@ where
             match ticket.ticket_type {
                 TicketType::Normal => {
                     self.queue_leaving_list.push(ticket);
-                    metrics::waitingroom::to_be_let_in_count(SELF_NODE_ID).inc();
+                    metrics::gauge!(
+                        "waitingroom.to_let_in_count",
+                        &[("node", SELF_NODE_ID.to_string())]
+                    )
+                    .increment(1);
                 }
                 TicketType::Drain => {
                     // This ticket is a dummy ticket. We shouldn't do anything with it.
@@ -310,7 +333,11 @@ where
     pub fn enqueue(&mut self, ticket: Ticket) {
         self.local_queue.enqueue(ticket);
         if ticket.ticket_type == TicketType::Normal {
-            metrics::waitingroom::in_queue_count(SELF_NODE_ID).inc();
+            metrics::gauge!(
+                "waitingroom.in_queue_count",
+                &[("node", SELF_NODE_ID.to_string())]
+            )
+            .increment(1);
         }
     }
 
@@ -318,7 +345,11 @@ where
     pub fn dequeue(&mut self) -> Option<Ticket> {
         let element = self.local_queue.dequeue();
         if element.is_some() && element.as_ref().unwrap().ticket_type == TicketType::Normal {
-            metrics::waitingroom::in_queue_count(SELF_NODE_ID).dec();
+            metrics::gauge!(
+                "waitingroom.in_queue_count",
+                &[("node", SELF_NODE_ID.to_string())]
+            )
+            .decrement(1);
         }
         element
     }
@@ -327,7 +358,11 @@ where
     pub fn remove_from_queue(&mut self, ticket_identifier: TicketIdentifier) {
         if let Some(ticket) = self.local_queue.remove(ticket_identifier) {
             if ticket.ticket_type == TicketType::Normal {
-                metrics::waitingroom::in_queue_count(SELF_NODE_ID).dec();
+                metrics::gauge!(
+                    "waitingroom.in_queue_count",
+                    &[("node", SELF_NODE_ID.to_string())]
+                )
+                .decrement(1);
             }
         }
     }

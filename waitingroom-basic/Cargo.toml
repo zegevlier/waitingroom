@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 waitingroom-core = { workspace = true }
 waitingroom-local-queue = { workspace = true }
+metrics = { workspace = true }

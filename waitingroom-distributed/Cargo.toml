@@ -11,6 +11,7 @@ test-log = "0.2.16"
 waitingroom-core = { workspace = true }
 waitingroom-local-queue = { workspace = true }
 waitingroom-spanning-trees = { workspace = true }
+metrics = { workspace = true }
 
 [features]
 testing = []

@@ -1,5 +1,4 @@
 use axum::{extract::Request, routing::get, Router};
-use foundations::{settings::net::SocketAddr, telemetry::log};
 
 pub(crate) async fn demo_server(listening_address: SocketAddr) {
     let app = Router::new().fallback(get(|req: Request| async move {

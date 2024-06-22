@@ -47,7 +47,7 @@ impl Default for WaitingRoomTimerSettings {
     }
 }
 
-#[settings(impl_default = false)]
+#[derive(Debug, Clone)]
 pub(crate) struct HttpServerSettings {
     /// Telemetry settings
     pub(crate) telemetry: TelemetrySettings,

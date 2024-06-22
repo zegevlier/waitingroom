@@ -1,5 +1,4 @@
 use waitingroom_core::{
-    metrics,
     network::{Network, NetworkHandle},
     random::RandomProvider,
     ticket::TicketType,
@@ -29,8 +28,7 @@ where
         let old_w_v_parent_v = self
             .qpid_weight_table
             .compute_weight(self.qpid_parent.unwrap());
-        self.qpid_weight_table
-            .set(self.node_id, weight, 0);
+        self.qpid_weight_table.set(self.node_id, weight, 0);
 
         if self.qpid_parent.unwrap() != self.node_id {
             let new_w_v_parent_v = self
@@ -69,7 +67,8 @@ where
             None
         };
 
-        self.qpid_weight_table.set(from_node, weight, update_iteration);
+        self.qpid_weight_table
+            .set(from_node, weight, update_iteration);
 
         if self.qpid_parent.is_none() {
             // QPID is uninitialized. This is either when a network change happened, or when we haven't initialized at all yet.
@@ -147,18 +146,11 @@ where
         // Update current QPID weight
         match self.local_queue.peek() {
             Some(next_ticket) => {
-                self.qpid_weight_table.set(
-                    self.node_id,
-                    next_ticket.join_time,
-                    0,
-                );
+                self.qpid_weight_table
+                    .set(self.node_id, next_ticket.join_time, 0);
             }
             None => {
-                self.qpid_weight_table.set(
-                    self.node_id,
-                    Time::MAX,
-                    0,
-                );
+                self.qpid_weight_table.set(self.node_id, Time::MAX, 0);
             }
         }
 
@@ -185,7 +177,11 @@ where
             TicketType::Normal => {
                 ticket.set_eviction_time(self.time_provider.get_now_time());
                 self.local_queue_leaving_list.push(ticket);
-                metrics::waitingroom::to_be_let_in_count(self.node_id).inc();
+                metrics::gauge!(
+                    "waitingroom.to_let_in_count",
+                    "node_id" => self.node_id.to_string()
+                )
+                .increment(1);
             }
             TicketType::Drain => {
                 // This ticket is a dummy ticket. We shouldn't do anything with it.
@@ -216,7 +212,8 @@ where
             // return Err(WaitingRoomError::QPIDNotInitialized);
         }
 
-        self.qpid_weight_table.set(from_node, weight, updated_iteration);
+        self.qpid_weight_table
+            .set(from_node, weight, updated_iteration);
         self.qpid_parent = self.qpid_weight_table.get_smallest();
         if self.qpid_parent.unwrap() != self.node_id {
             let w_v_parent_v = self
