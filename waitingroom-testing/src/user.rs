@@ -1,6 +1,12 @@
 use waitingroom_core::{pass::Pass, ticket::Ticket, time::Time};
 
 #[derive(Debug)]
+pub struct UserBehaviour {
+    pub abandon_odds: u64,
+    pub pass_refresh_odds: u64,
+}
+
+#[derive(Debug)]
 pub struct User {
     next_action_time: Time,
     next_action: UserAction,
@@ -10,6 +16,16 @@ pub struct User {
 }
 
 impl User {
+    pub fn new_joining() -> Self {
+        Self {
+            next_action_time: 0, // We want to join ASAP
+            next_action: UserAction::Join,
+            ticket: None,
+            pass: None,
+            user_state: UserState::Joining,
+        }
+    }
+
     pub fn new_refreshing(ticket: Ticket) -> Self {
         Self {
             next_action_time: ticket.next_refresh_time,
@@ -30,6 +46,7 @@ impl User {
             // TODO: Add a small chance of abandoning, and some randomness for when to check in.
             self.next_action_time = new_ticket.next_refresh_time;
             self.next_action = UserAction::Refresh;
+            self.user_state = UserState::InQueue;
         }
     }
 
@@ -68,6 +85,7 @@ impl User {
 
 #[derive(Debug, Clone, Copy)]
 pub enum UserAction {
+    Join,
     Refresh,
     Leave,
     Done,
@@ -78,4 +96,5 @@ pub enum UserState {
     InQueue,
     OnSite,
     AbandonedQueue,
+    Joining,
 }

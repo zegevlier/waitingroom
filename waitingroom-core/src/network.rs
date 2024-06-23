@@ -36,23 +36,34 @@ pub trait NetworkHandle<M>: Debug {
 #[derive(Clone)]
 pub enum Latency {
     Fixed(u128),
-    Random(u128, u128, Option<DeterministicRandomProvider>),
+    UniformRandom(u128, u128, DeterministicRandomProvider),
+}
+
+pub enum LatencySetting {
+    Fixed(u128),
+    UniformRandom(u128, u128),
+}
+
+impl LatencySetting {
+    pub fn to_latency(&self, random_provider: Option<DeterministicRandomProvider>) -> Latency {
+        match self {
+            Self::Fixed(latency) => Latency::Fixed(*latency),
+            Self::UniformRandom(min, max) => Latency::UniformRandom(
+                *min,
+                *max,
+                random_provider.expect("Random provider must be provided for random latency"),
+            ),
+        }
+    }
 }
 
 impl Debug for Latency {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Fixed(arg0) => f.debug_tuple("Fixed").field(arg0).finish(),
-            Self::Random(arg0, arg1, _) => f.debug_tuple("Random").field(arg0).field(arg1).finish(),
-        }
-    }
-}
-
-impl Latency {
-    pub fn apply_random_provider(self, random_provider: DeterministicRandomProvider) -> Self {
-        match self {
-            Self::Random(min, max, _) => Self::Random(min, max, Some(random_provider)),
-            Self::Fixed(latency) => Self::Fixed(latency),
+            Self::UniformRandom(arg0, arg1, _) => {
+                f.debug_tuple("Random").field(arg0).field(arg1).finish()
+            }
         }
     }
 }
@@ -132,8 +143,8 @@ where
         }
         let latency = match &self.latency {
             Latency::Fixed(latency) => *latency,
-            Latency::Random(min, max, random_provider) => {
-                let random = random_provider.as_ref().unwrap().random_u64() as u128;
+            Latency::UniformRandom(min, max, random_provider) => {
+                let random = random_provider.random_u64() as u128;
                 min + random % (max - min)
             }
         };

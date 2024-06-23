@@ -96,6 +96,10 @@ where
 {
     fn join(&mut self) -> Result<waitingroom_core::ticket::Ticket, WaitingRoomError> {
         log::info!("[NODE {}] join", self.node_id);
+
+        if self.qpid_parent.is_none() {
+            return Err(WaitingRoomError::QPIDNotInitialized);
+        }
         let ticket = waitingroom_core::ticket::Ticket::new(
             self.node_id,
             self.settings.ticket_refresh_time,

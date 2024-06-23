@@ -1,303 +1,438 @@
 use waitingroom_core::{
     network::DummyNetwork,
-    random::{DeterministicRandomProvider, RandomProvider},
+    random::RandomProvider,
     settings::GeneralWaitingRoomSettings,
     time::{DummyTimeProvider, TimeProvider},
-    WaitingRoomMessageTriggered, WaitingRoomTimerTriggered, WaitingRoomUserTriggered,
+    WaitingRoomError, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered,
+    WaitingRoomUserTriggered,
 };
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
 use crate::{
-    checks::{check_consistent_state, check_final_state},
-    debug_print_qpid_info_for_nodes,
-    user::{User, UserAction},
+    checks::{
+        check_consistent_state, check_final_state, FinalStateCheckError, InvariantCheckError,
+    },
+    user::{User, UserAction, UserBehaviour},
     Node,
 };
 
-pub struct SimulationConfig {}
+mod config;
+mod random_providers;
+mod results;
 
-pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: SimulationConfig) {
-    let node_count = 8;
+pub use config::SimulationConfig;
+use random_providers::RandomProviders;
+pub use results::SimulationResults;
+use results::SimulationResultsBuilder;
 
-    let settings = GeneralWaitingRoomSettings {
-        min_user_count: 20,
-        max_user_count: 25,
-        ticket_refresh_time: 6000,
-        ticket_expiry_time: 20000,
-        pass_expiry_time: 0,
-        fault_detection_period: 1000,
-        fault_detection_timeout: 200,
-        fault_detection_interval: 100,
-        eviction_interval: 1000,
-        cleanup_interval: 1000,
-    };
+pub struct Simulation {
+    config: SimulationConfig,
+}
 
-    // let latency = waitingroom_core::network::Latency::Fixed(10);
-    let latency = waitingroom_core::network::Latency::Random(1, 20, None);
+pub struct RunningSimulation {
+    node_settings: GeneralWaitingRoomSettings,
+    time_provider: DummyTimeProvider,
+    random_providers: RandomProviders,
+    nodes: Vec<Node>,
+    network: DummyNetwork<NodeToNodeMessage>,
+    next_node_id: usize,
+    results: SimulationResultsBuilder,
+    users: Vec<User>,
+}
 
-    log::info!("Seed: {}", seed);
-    // We use a separate random provider for the network, the nodes, and the disturbance.
-    // All of these are seeded with the base random provider, which is seeded with the seed.
-    // This ensures that everything is deterministic.
-    let base_random_provider = DeterministicRandomProvider::new(seed);
+impl RunningSimulation {
+    fn new(config: &SimulationConfig, seed: u64) -> Self {
+        let time_provider = DummyTimeProvider::new();
+        let random_providers = RandomProviders::new(seed);
 
-    let network_random_provider =
-        DeterministicRandomProvider::new(base_random_provider.random_u64());
-    let node_random_provider = DeterministicRandomProvider::new(base_random_provider.random_u64());
-    let disturbance_random_provider =
-        DeterministicRandomProvider::new(base_random_provider.random_u64());
-
-    let network: DummyNetwork<NodeToNodeMessage> = DummyNetwork::new(
-        time_provider.clone(),
-        latency.apply_random_provider(network_random_provider.clone()),
-    );
-
-    let mut nodes = Vec::new();
-
-    for i in 0..node_count {
-        let node = waitingroom_distributed::DistributedWaitingRoom::new(
-            settings,
-            i,
+        let network: DummyNetwork<NodeToNodeMessage> = DummyNetwork::new(
             time_provider.clone(),
-            node_random_provider.clone(),
-            network.clone(),
+            config
+                .latency
+                .to_latency(Some(random_providers.network_random_provider().clone())),
         );
 
-        nodes.push(node);
+        Self {
+            time_provider,
+            random_providers,
+            network,
+            nodes: Vec::new(),
+            next_node_id: 0,
+            node_settings: config.settings,
+            results: SimulationResultsBuilder::new(),
+            users: Vec::new(),
+        }
     }
 
-    // We initialize the network with the nodes.
-    nodes[0].initialise_alone().unwrap();
+    fn add_node(&mut self) -> Result<(), WaitingRoomError> {
+        let mut node = waitingroom_distributed::DistributedWaitingRoom::new(
+            self.node_settings,
+            self.next_node_id,
+            self.time_provider.clone(),
+            self.random_providers.node_random_provider().clone(),
+            self.network.clone(),
+        );
+        node.join_at(0)?;
 
-    let mut next_node_id = nodes.len();
-
-    // We add the other nodes to the network.
-    for node in nodes.iter_mut().skip(1) {
-        node.join_at(0).unwrap();
+        self.nodes.push(node);
+        self.next_node_id += 1;
+        self.results.add_node();
+        Ok(())
     }
 
-    let mut past_initialisation = false;
+    fn initialise_network(&mut self, initial_node_count: usize) -> Result<(), WaitingRoomError> {
+        assert!(
+            initial_node_count > 0,
+            "Initial node count must be greater than 0"
+        );
 
-    let mut users = Vec::new();
+        for _ in 0..initial_node_count {
+            self.add_node()?;
+        }
 
-    // Now we start the network running.
-    loop {
-        // Each iteration of the loop is one time step.
-        time_provider.increase_by(1);
+        Ok(())
+    }
 
+    fn tick_time(&mut self) {
+        self.time_provider.increase_by(1);
+    }
+
+    fn get_now_time(&self) -> u128 {
+        self.time_provider.get_now_time()
+    }
+
+    fn check_consistent_state(&self) -> Result<(), InvariantCheckError> {
+        // TODO: Move this to be part of the running simulation.
+        check_consistent_state(&self.nodes, &self.network, &self.node_settings)
+    }
+
+    fn debug_print(&self) {
+        log::info!("Debug printing node states");
+        log::info!("Time: {}", self.time_provider.get_now_time());
+        log::info!("Number of network messages: {}", self.network.len());
+        log::info!("Number of users: {}", self.users.len());
+        log::info!("Number of nodes: {}\nNodes:", self.nodes.len());
+        for node in self.nodes.iter() {
+            log::info!(
+                "Node {}\t\tQPID parent: {:?}",
+                node.get_node_id(),
+                node.get_qpid_parent()
+            );
+            log::info!("Weight table:");
+            log::info!("Neighbour\t\tWeight");
+            for (neighbour, weight) in node.get_qpid_weight_table().all_weights() {
+                log::info!("{}\t\t\t\t{}", neighbour, weight);
+            }
+        }
+    }
+
+    fn final_checks_and_results(
+        self,
+        check_consistency: bool,
+    ) -> Result<SimulationResults, SimulationError> {
         // We'll check if we're in all the right states.
         // If we're not, this function will panic.
-        match check_consistent_state(&nodes, &network, &settings) {
-            Ok(_) => {}
-            Err(error) => {
-                log::error!("Inconsistent state, {:?}", error);
-                log::error!("Time: {}", time_provider.get_now_time());
-                debug_print_qpid_info_for_nodes(&nodes);
-                return;
+        if check_consistency {
+            if let Err(error) = check_final_state(&self.nodes, &self.users) {
+                self.debug_print();
+                return Err(SimulationError::FinalStateCheck(error));
             }
         }
 
-        // if [43120, 43121].contains(&time_provider.get_now_time()) {
-        //     for node in nodes.iter() {
-        //         log::debug!(
-        //             "{} Local queue length: {}",
-        //             node.get_node_id(),
-        //             node.in_queue_count()
-        //         );
-        //     }
-        //     debug_print_qpid_info_for_nodes(&nodes);
-        // }
+        let (x, y): (Vec<_>, Vec<_>) = self
+            .users
+            .iter()
+            .enumerate()
+            .filter(|(_, u)| u.get_eviction_time().is_some())
+            .map(|(i, u)| (i, u.get_eviction_time().unwrap()))
+            .unzip();
 
-        process_messages(&mut nodes, &network_random_provider);
+        let normalised_kendall_tau = kendall_tau::normalised_kendall_tau(&x, &y);
 
-        // While the network is starting up, we just keep processing messages.
-        // This is fine, because we have tests later that add and remove nodes, so we can test the network in a variety of states.
-        if !network.is_empty() && !past_initialisation {
-            continue;
-        }
+        Ok(self.results.build(normalised_kendall_tau))
+    }
 
-        if !past_initialisation {
-            log::info!("Past initialisation");
-            past_initialisation = true;
-            debug_print_qpid_info_for_nodes(&nodes);
-        }
+    fn process_messages(&mut self) -> Result<(), WaitingRoomError> {
+        // We first process all the network messages that came in at this time step. We randomise the order in which the nodes process their messages.
+        let mut node_indices: Vec<usize> = (0..self.nodes.len()).collect();
 
-        call_timer_functions(&mut nodes, time_provider, &settings);
+        let mut nodes_that_processed = Vec::new();
+        loop {
+            self.random_providers
+                .network_random_provider()
+                .shuffle(&mut node_indices);
 
-        do_user_actions(
-            &mut users,
-            &mut nodes,
-            &disturbance_random_provider,
-            time_provider,
-        );
-
-        if disturbance_random_provider.random_u64() % 200 == 0 {
-            // We add a new user to a random node.
-            let mut tries = 0;
-            loop {
-                if tries > 10 {
-                    log::error!("Failed to join at any node after 10 tries!");
-                    break;
+            while let Some(node_index) = node_indices.pop() {
+                let node = &mut self.nodes[node_index];
+                if node.receive_message()? {
+                    nodes_that_processed.push(node_index);
                 }
-                let node_index = disturbance_random_provider.random_u64() as usize % nodes.len();
-                match nodes[node_index].join() {
-                    Ok(ticket) => {
-                        users.push(User::new_refreshing(ticket));
-                        break;
+            }
+
+            if nodes_that_processed.is_empty() {
+                break;
+            }
+
+            // This empties out the nodes_that_processed vector, and puts its old contents into node_indices.
+            node_indices = std::mem::take(&mut nodes_that_processed);
+        }
+
+        Ok(())
+    }
+
+    fn call_timer_functions(&mut self) -> Result<(), WaitingRoomError> {
+        let now = self.time_provider.get_now_time();
+
+        if now % self.node_settings.cleanup_interval == 0 {
+            // We'll call it on all nodes at the same time. This isn't strictly required for cleanup
+            // but there's no reason not to.
+            for node in self.nodes.iter_mut() {
+                node.cleanup()?;
+            }
+        }
+
+        if now % self.node_settings.eviction_interval == 0 {
+            // It is important that we call the eviction function on all nodes at the same time.
+            for node in self.nodes.iter_mut() {
+                node.eviction()?;
+            }
+        }
+
+        if now % self.node_settings.fault_detection_period == 0 {
+            // We'll call it on all nodes at the same time. This isn't strictly required for fault detection
+            for node in self.nodes.iter_mut() {
+                node.fault_detection()?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn do_user_actions(&mut self, _user_behaviour: &UserBehaviour) -> Result<(), WaitingRoomError> {
+        let now = self.time_provider.get_now_time();
+
+        let mut i = 0;
+        while i < self.users.len() {
+            let user = &mut self.users[i];
+            // log::debug!("{:?}", user);
+
+            if user.should_action(now) {
+                match user.get_action() {
+                    UserAction::Refresh => {
+                        let ticket = user.take_ticket();
+                        let (ticket, position_estimate) = match self
+                            .nodes
+                            .iter_mut()
+                            .find(|n| n.get_node_id() == ticket.node_id)
+                        {
+                            Some(n) => {
+                                let checkin_response = n.check_in(ticket)?;
+                                (
+                                    checkin_response.new_ticket,
+                                    Some(checkin_response.position_estimate),
+                                )
+                            }
+                            None => {
+                                let mut qpid_initialised_nodes = self
+                                    .nodes
+                                    .iter_mut()
+                                    .filter(|n| n.get_qpid_parent().is_some())
+                                    .collect::<Vec<_>>();
+                                let new_node_id =
+                                    self.random_providers.user_random_provider().random_u64()
+                                        as usize
+                                        % qpid_initialised_nodes.len();
+                                (qpid_initialised_nodes[new_node_id].join()?, None)
+                            }
+                        };
+                        user.refresh_ticket(position_estimate.unwrap_or(1), ticket);
                     }
-                    Err(err) => match err {
-                        waitingroom_core::WaitingRoomError::QPIDNotInitialized => {
-                            // We tried to join at a node that wasn't ready yet, so we'll retry.
-                            tries += 1;
+                    UserAction::Leave => {
+                        let ticket = user.take_ticket();
+                        let node = match self
+                            .nodes
+                            .iter_mut()
+                            .find(|n| n.get_node_id() == ticket.node_id)
+                        {
+                            Some(n) => n,
+                            None => {
+                                // The node is gone, so we can't leave.
+                                // We'll need to rejoin at another node.
+                                user.start_refreshing();
+                                continue;
+                            }
+                        };
+                        let pass = node.leave(ticket)?;
+                        user.set_pass(pass);
+                        self.results.left_user();
+                        // TODO: Add that the user can refresh the pass
+                    }
+                    UserAction::Done => {}
+                    UserAction::Join => {
+                        let mut tries = 0;
+                        loop {
+                            if tries > 10 {
+                                log::error!("Failed to join at any node after 10 tries!");
+                                break;
+                            }
+                            let node_index = self
+                                .random_providers
+                                .disturbance_random_provider()
+                                .random_u64() as usize
+                                % self.nodes.len();
+                            match self.nodes[node_index].join() {
+                                Ok(ticket) => {
+                                    // Refresh with this ticket
+                                    user.refresh_ticket(usize::MAX, ticket);
+                                    break;
+                                }
+                                Err(err) => match err {
+                                    waitingroom_core::WaitingRoomError::QPIDNotInitialized => {
+                                        // We tried to join at a node that wasn't ready yet, so we'll retry.
+                                        tries += 1;
+                                    }
+                                    _ => {
+                                        panic!("Unexpected error: {:?}", err);
+                                    }
+                                },
+                            };
                         }
-                        _ => {
-                            panic!("Unexpected error: {:?}", err);
-                        }
-                    },
-                };
-            }
-        }
-
-        if disturbance_random_provider.random_u64() % 2000 == 0 {
-            // Kill a node.
-            if !nodes.len() == 1 {
-                // We don't want to kill the last node.
-                let node_index = disturbance_random_provider.random_u64() as usize % nodes.len();
-                log::warn!("Killing node {}", node_index);
-                nodes.remove(node_index);
-                // The network should be able to recover from this without any issues.
-            }
-        }
-
-        if disturbance_random_provider.random_u64() % 2000 == 0 {
-            // Add a node
-            nodes.push(waitingroom_distributed::DistributedWaitingRoom::new(
-                settings,
-                next_node_id,
-                time_provider.clone(),
-                node_random_provider.clone(),
-                network.clone(),
-            ));
-            next_node_id += 1;
-            nodes.last_mut().unwrap().join_at(0).unwrap();
-        }
-
-        // We'll stop the network after a number of time steps.
-        if time_provider.get_now_time() > 100000 {
-            break;
-        }
-    }
-
-    match check_final_state(&nodes, &users) {
-        Ok(_) => {
-            log::info!("Simulation completed successfully");
-        }
-        Err(error) => {
-            log::error!("Simulation failed: {:?}", error);
-        }
-    }
-}
-
-fn process_messages(nodes: &mut [Node], random_provider: &DeterministicRandomProvider) {
-    // We first process all the network messages that came in at this time step. We randomise the order in which the nodes process their messages.
-    let mut node_indices: Vec<usize> = (0..nodes.len()).collect();
-
-    let mut nodes_that_processed = Vec::new();
-    loop {
-        random_provider.shuffle(&mut node_indices);
-
-        while let Some(node_index) = node_indices.pop() {
-            let node = &mut nodes[node_index];
-            if node.receive_message().unwrap() {
-                nodes_that_processed.push(node_index);
-            }
-        }
-
-        // This empties out the nodes_that_processed vector, and puts its old contents into node_indices.
-        node_indices = std::mem::take(&mut nodes_that_processed);
-
-        if node_indices.is_empty() {
-            break;
-        }
-    }
-}
-
-fn call_timer_functions(
-    nodes: &mut [Node],
-    time_provider: &DummyTimeProvider,
-    settings: &GeneralWaitingRoomSettings,
-) {
-    let now = time_provider.get_now_time();
-
-    if now % settings.cleanup_interval == 0 {
-        // We'll call it on all nodes at the same time. This isn't strictly required for cleanup
-        // but there's no reason not to.
-        for node in nodes.iter_mut() {
-            node.cleanup().unwrap();
-        }
-    }
-
-    if now % settings.eviction_interval == 0 {
-        // It is important that we call the eviction function on all nodes at the same time.
-        for node in nodes.iter_mut() {
-            node.eviction().unwrap();
-        }
-    }
-
-    if now % settings.fault_detection_period == 0 {
-        // We'll call it on all nodes at the same time. This isn't strictly required for fault detection
-        for node in nodes.iter_mut() {
-            node.fault_detection().unwrap();
-        }
-    }
-}
-
-fn do_user_actions(
-    users: &mut [User],
-    nodes: &mut [Node],
-    random_provider: &DeterministicRandomProvider, // We don't use this yet, but once we add a bit more randomness to the user actions, we will.
-    time_provider: &DummyTimeProvider,
-) {
-    let now = time_provider.get_now_time();
-
-    let mut i = 0;
-    while i < users.len() {
-        let user = &mut users[i];
-
-        if user.should_action(now) {
-            match user.get_action() {
-                UserAction::Refresh => {
-                    let ticket = user.take_ticket();
-                    let (ticket, position_estimate) = nodes
-                        .iter_mut()
-                        .find(|n| n.get_node_id() == ticket.node_id)
-                        .map(|n| n.check_in(ticket).unwrap())
-                        .map(|cr| (cr.new_ticket, Some(cr.position_estimate)))
-                        .unwrap_or_else(|| {
-                            // The node is gone, so we need to re-join the queue at another node.
-                            let new_node_id = random_provider.random_u64() as usize % nodes.len();
-                            (nodes[new_node_id].join().unwrap(), None)
-                        });
-                    user.refresh_ticket(position_estimate.unwrap_or(1), ticket);
+                    }
                 }
-                UserAction::Leave => {
-                    let ticket = user.take_ticket();
-                    let node = match nodes.iter_mut().find(|n| n.get_node_id() == ticket.node_id) {
-                        Some(n) => n,
-                        None => {
-                            // The node is gone, so we can't leave.
-                            // We'll need to rejoin at another node.
-                            user.start_refreshing();
-                            continue;
-                        }
-                    };
-                    let pass = node.leave(ticket).unwrap();
-                    user.set_pass(pass);
-                    // TODO: Add that the user can refresh the pass
-                }
-                UserAction::Done => {}
+            }
+            i += 1;
+        }
+
+        Ok(())
+    }
+
+    fn user_join(&mut self) {
+        self.results.add_user();
+        self.users.push(User::new_joining());
+    }
+
+    fn should_do_disturbance(&mut self, odds: u64) -> bool {
+        self.random_providers
+            .disturbance_random_provider()
+            .random_u64()
+            % odds
+            == 0
+    }
+
+    fn kill_node(&mut self) {
+        if self.nodes.len() > 1 {
+            // We don't want to kill the last node.
+            let node_index = self
+                .random_providers
+                .disturbance_random_provider()
+                .random_u64() as usize
+                % self.nodes.len();
+            log::info!("Killing node {}", node_index);
+            self.nodes.remove(node_index);
+            self.results.remove_node();
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum SimulationError {
+    WaitingRoom(WaitingRoomError),
+    InvariantCheck(InvariantCheckError),
+    FinalStateCheck(FinalStateCheckError),
+}
+
+impl Simulation {
+    pub fn new(config: SimulationConfig) -> Self {
+        Self { config }
+    }
+
+    pub fn run(&self, seed: u64) -> Result<SimulationResults, SimulationError> {
+        log::info!("Running simulation with seed {}", seed);
+
+        let mut sim = RunningSimulation::new(&self.config, seed);
+
+        match sim.initialise_network(self.config.initial_node_count) {
+            Ok(_) => {
+                log::info!("Network initialised");
+            }
+            Err(err) => {
+                log::error!("Failed to initialise network: {:?}", err);
+                sim.debug_print();
+                return Err(SimulationError::WaitingRoom(err));
             }
         }
-        i += 1;
+
+        // Now we start the network running.
+        loop {
+            sim.tick_time();
+
+            // We'll check if we're in all the right states.
+            // If we're not, this function will panic.
+            if self.config.check_consistency {
+                if let Err(error) = sim.check_consistent_state() {
+                    log::error!("Error in invariant check: {:?}", error);
+                    sim.debug_print();
+                    return Err(SimulationError::InvariantCheck(error));
+                }
+            }
+
+            match sim.process_messages() {
+                Ok(_) => {}
+                Err(err) => {
+                    log::error!("Error processing messages: {:?}", err);
+                    sim.debug_print();
+                    return Err(SimulationError::WaitingRoom(err));
+                }
+            }
+
+            match sim.call_timer_functions() {
+                Ok(_) => {}
+                Err(err) => {
+                    log::error!("Error calling timer functions: {:?}", err);
+                    sim.debug_print();
+                    return Err(SimulationError::WaitingRoom(err));
+                }
+            };
+
+            // Process user actions
+
+            match sim.do_user_actions(&self.config.user_behaviour) {
+                Ok(_) => {}
+                Err(err) => {
+                    log::error!("Error processing user actions: {:?}", err);
+                    sim.debug_print();
+                    return Err(SimulationError::WaitingRoom(err));
+                }
+            }
+
+            // Add new users
+            if sim.should_do_disturbance(self.config.user_join_odds) {
+                sim.user_join();
+            }
+
+            // Kill nodes
+            if sim.should_do_disturbance(self.config.node_kill_odds) {
+                sim.kill_node();
+            }
+
+            // And add nodes
+            if sim.should_do_disturbance(self.config.node_kill_odds) {
+                log::info!("Adding node to network");
+                match sim.add_node() {
+                    Ok(_) => {}
+                    Err(err) => {
+                        log::error!("Error adding node to network: {:?}", err);
+                    }
+                }
+            }
+
+            // Stop the network after a number of time steps
+            if sim.get_now_time() > self.config.stop_at_time {
+                break;
+            }
+        }
+
+        log::info!("Simulation completed");
+        sim.final_checks_and_results(self.config.check_consistency)
     }
 }

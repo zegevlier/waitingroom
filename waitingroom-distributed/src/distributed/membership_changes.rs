@@ -16,10 +16,14 @@ where
 {
     pub fn join_at(&mut self, at: NodeId) -> Result<(), WaitingRoomError> {
         log::debug!("[{}] Joining at {}", self.node_id, at);
-        self.qpid_weight_table.set(self.node_id, Time::MAX, 0);
-        self.network_handle
-            .send_message(at, NodeToNodeMessage::NodeJoin(self.node_id))?;
-        Ok(())
+        if at == self.node_id {
+            self.initialise_alone()
+        } else {
+            self.qpid_weight_table.set(self.node_id, Time::MAX, 0);
+            self.network_handle
+                .send_message(at, NodeToNodeMessage::NodeJoin(self.node_id))?;
+            Ok(())
+        }
     }
 
     pub fn node_join_message(&mut self, node_id: NodeId) -> Result<(), WaitingRoomError> {

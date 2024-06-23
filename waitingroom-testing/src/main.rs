@@ -1,10 +1,9 @@
-use std::fs::OpenOptions;
-
 use fern::colors::ColoredLevelConfig;
 use log::LevelFilter;
 use waitingroom_core::{
-    network::DummyNetwork,
+    network::{DummyNetwork, LatencySetting},
     random::DeterministicRandomProvider,
+    settings::GeneralWaitingRoomSettings,
     time::{DummyTimeProvider, TimeProvider},
 };
 use waitingroom_distributed::messages::NodeToNodeMessage;
@@ -13,7 +12,7 @@ mod checks;
 mod simulation;
 mod user;
 
-use simulation::SimulationConfig;
+use simulation::{Simulation, SimulationConfig};
 
 type Node = waitingroom_distributed::DistributedWaitingRoom<
     DummyTimeProvider,
@@ -68,46 +67,40 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
 }
 
 fn main() {
-    // debug_run(878);
-    testing_run(0..10000);
-}
-
-#[allow(unused)]
-fn debug_run(seed: u64) {
     let logging_level = LevelFilter::Debug;
     let time_provider = DummyTimeProvider::new();
 
     initialise_logging(&time_provider, logging_level);
 
-    simulation::run(seed, &time_provider, SimulationConfig {});
-}
+    let config = SimulationConfig {
+        settings: GeneralWaitingRoomSettings {
+            min_user_count: 20,
+            max_user_count: 25,
+            ticket_refresh_time: 6000,
+            ticket_expiry_time: 20000,
+            pass_expiry_time: 0,
+            fault_detection_period: 1000,
+            fault_detection_timeout: 200,
+            fault_detection_interval: 100,
+            eviction_interval: 1000,
+            cleanup_interval: 1000,
+        },
+        initial_node_count: 8,
+        latency: LatencySetting::UniformRandom(10, 20),
+        user_join_odds: 200,
+        node_kill_odds: 1000,
+        check_consistency: true,
+        stop_at_time: 100000,
+        user_behaviour: user::UserBehaviour {
+            abandon_odds: 1000,
+            pass_refresh_odds: 1000,
+        },
+    };
 
-#[allow(unused)]
-fn testing_run(seed_range: std::ops::Range<u64>) {
-    let logging_level = LevelFilter::Error;
-    let time_provider = DummyTimeProvider::new();
+    let simulation = Simulation::new(config);
 
-    initialise_logging(&time_provider, logging_level);
-
-    for seed in seed_range {
-        time_provider.reset();
-        log::error!("Seed: {}", seed);
-        simulation::run(seed, &time_provider, SimulationConfig {});
-    }
-}
-
-fn debug_print_qpid_info_for_nodes(nodes: &[Node]) {
-    log::info!("Debug printing QPID states");
-    for node in nodes.iter() {
-        log::info!(
-            "Node {}\t\tQPID parent: {:?}",
-            node.get_node_id(),
-            node.get_qpid_parent()
-        );
-        log::info!("Weight table:");
-        log::info!("Neighbour\t\tWeight");
-        for (neighbour, weight) in node.get_qpid_weight_table().all_weights() {
-            log::info!("{}\t\t\t\t{}", neighbour, weight);
-        }
+    match simulation.run(0) {
+        Ok(results) => log::info!("Simulation completed successfully: {:?}", results),
+        Err(e) => log::error!("Simulation failed: {:?}", e),
     }
 }
