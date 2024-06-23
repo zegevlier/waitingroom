@@ -1,4 +1,4 @@
-use waitingroom_core::{network::DummyNetwork, settings::GeneralWaitingRoomSettings, time::Time};
+use waitingroom_core::{network::DummyNetwork, settings::GeneralWaitingRoomSettings};
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
 use crate::Node;
@@ -8,11 +8,6 @@ pub enum InvariantCheckError {
     QpidNode,
     SingleRoot,
     TooManyOnSite,
-}
-
-#[derive(Debug)]
-pub enum FinalStateCheckError {
-    UsersWrongOrder(usize, Time, Time),
 }
 
 pub fn check_consistent_state(

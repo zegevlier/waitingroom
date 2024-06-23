@@ -9,7 +9,7 @@ use waitingroom_core::{
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
 use crate::{
-    checks::{check_consistent_state, FinalStateCheckError, InvariantCheckError},
+    checks::{check_consistent_state, InvariantCheckError},
     Node,
 };
 
@@ -297,98 +297,6 @@ impl RunningSimulation {
             }
         }
 
-        // let mut i = 0;
-        // while i < self.users.len() {
-        //     let user = &mut self.users[i];
-        //     // log::debug!("{:?}", user);
-
-        //     if user.should_action(now) {
-        //         match user.get_action() {
-        //             UserAction::Refresh => {
-        //                 let ticket = user.take_ticket();
-        //                 let (ticket, position_estimate) = match self
-        //                     .nodes
-        //                     .iter_mut()
-        //                     .find(|n| n.get_node_id() == ticket.node_id)
-        //                 {
-        //                     Some(n) => {
-        //                         let checkin_response = n.check_in(ticket)?;
-        //                         (
-        //                             checkin_response.new_ticket,
-        //                             Some(checkin_response.position_estimate),
-        //                         )
-        //                     }
-        //                     None => {
-        //                         let mut qpid_initialised_nodes = self
-        //                             .nodes
-        //                             .iter_mut()
-        //                             .filter(|n| n.get_qpid_parent().is_some())
-        //                             .collect::<Vec<_>>();
-        //                         let new_node_id =
-        //                             self.random_providers.user_random_provider().random_u64()
-        //                                 as usize
-        //                                 % qpid_initialised_nodes.len();
-        //                         (qpid_initialised_nodes[new_node_id].join()?, None)
-        //                     }
-        //                 };
-        //                 user.refresh_ticket(position_estimate.unwrap_or(1), ticket);
-        //             }
-        //             UserAction::Leave => {
-        //                 let ticket = user.take_ticket();
-        //                 let node = match self
-        //                     .nodes
-        //                     .iter_mut()
-        //                     .find(|n| n.get_node_id() == ticket.node_id)
-        //                 {
-        //                     Some(n) => n,
-        //                     None => {
-        //                         // The node is gone, so we can't leave.
-        //                         // We'll need to rejoin at another node.
-        //                         user.start_refreshing();
-        //                         continue;
-        //                     }
-        //                 };
-        //                 let pass = node.leave(ticket)?;
-        //                 user.set_pass(pass);
-        //                 self.results.left_user();
-        //                 // TODO: Add that the user can refresh the pass
-        //             }
-        //             UserAction::Done => {}
-        //             UserAction::Join => {
-        //                 let mut tries = 0;
-        //                 loop {
-        //                     if tries > 10 {
-        //                         log::error!("Failed to join at any node after 10 tries!");
-        //                         break;
-        //                     }
-        //                     let node_index = self
-        //                         .random_providers
-        //                         .disturbance_random_provider()
-        //                         .random_u64() as usize
-        //                         % self.nodes.len();
-        //                     match self.nodes[node_index].join() {
-        //                         Ok(ticket) => {
-        //                             // Refresh with this ticket
-        //                             user.refresh_ticket(usize::MAX, ticket);
-        //                             break;
-        //                         }
-        //                         Err(err) => match err {
-        //                             waitingroom_core::WaitingRoomError::QPIDNotInitialized => {
-        //                                 // We tried to join at a node that wasn't ready yet, so we'll retry.
-        //                                 tries += 1;
-        //                             }
-        //                             _ => {
-        //                                 panic!("Unexpected error: {:?}", err);
-        //                             }
-        //                         },
-        //                     };
-        //                 }
-        //             }
-        //         }
-        //     }
-        //     i += 1;
-        // }
-
         Ok(())
     }
 
@@ -424,7 +332,6 @@ impl RunningSimulation {
 pub enum SimulationError {
     WaitingRoom(WaitingRoomError),
     InvariantCheck(InvariantCheckError),
-    FinalStateCheck(FinalStateCheckError),
 }
 
 impl Simulation {
