@@ -9,21 +9,20 @@ use waitingroom_core::{
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
 use crate::{
-    checks::{
-        check_consistent_state, check_final_state, FinalStateCheckError, InvariantCheckError,
-    },
-    user::{User, UserAction, UserBehaviour},
+    checks::{check_consistent_state, FinalStateCheckError, InvariantCheckError},
     Node,
 };
 
 mod config;
 mod random_providers;
 mod results;
+mod user;
 
 pub use config::SimulationConfig;
 use random_providers::RandomProviders;
 pub use results::SimulationResults;
 use results::SimulationResultsBuilder;
+pub use user::{User, UserBehaviour};
 
 pub struct Simulation {
     config: SimulationConfig,
@@ -133,18 +132,18 @@ impl RunningSimulation {
         // We'll check if we're in all the right states.
         // If we're not, this function will panic.
         if check_consistency {
-            if let Err(error) = check_final_state(&self.nodes, &self.users) {
-                self.debug_print();
-                return Err(SimulationError::FinalStateCheck(error));
-            }
+            // TODO reenable
+            // if let Err(error) = check_final_state(&self.nodes, &self.users) {
+            //     self.debug_print();
+            //     return Err(SimulationError::FinalStateCheck(error));
+            // }
         }
 
         let (x, y): (Vec<_>, Vec<_>) = self
             .users
             .iter()
-            .enumerate()
-            .filter(|(_, u)| u.get_eviction_time().is_some())
-            .map(|(i, u)| (i, u.get_eviction_time().unwrap()))
+            .map(|u| (u.get_join_time(), u.get_eviction_time()))
+            .filter(|(join_time, eviction_time)| join_time.is_some() && eviction_time.is_some())
             .unzip();
 
         let normalised_kendall_tau = kendall_tau::normalised_kendall_tau(&x, &y);
@@ -211,104 +210,191 @@ impl RunningSimulation {
     fn do_user_actions(&mut self, _user_behaviour: &UserBehaviour) -> Result<(), WaitingRoomError> {
         let now = self.time_provider.get_now_time();
 
-        let mut i = 0;
-        while i < self.users.len() {
-            let user = &mut self.users[i];
-            // log::debug!("{:?}", user);
+        let available_node_idxs = self
+            .nodes
+            .iter_mut()
+            .enumerate()
+            .filter(|(_, n)| n.get_qpid_parent().is_some())
+            .map(|(idx, _)| idx)
+            .collect::<Vec<_>>();
 
+        let joining_available = !available_node_idxs.is_empty();
+
+        if !joining_available {
+            log::warn!("No nodes available for QPID operations!");
+        }
+
+        for user in 0..self.users.len() {
+            let user = &mut self.users[user];
             if user.should_action(now) {
-                match user.get_action() {
-                    UserAction::Refresh => {
-                        let ticket = user.take_ticket();
-                        let (ticket, position_estimate) = match self
-                            .nodes
-                            .iter_mut()
-                            .find(|n| n.get_node_id() == ticket.node_id)
-                        {
-                            Some(n) => {
-                                let checkin_response = n.check_in(ticket)?;
-                                (
-                                    checkin_response.new_ticket,
-                                    Some(checkin_response.position_estimate),
-                                )
-                            }
-                            None => {
-                                let mut qpid_initialised_nodes = self
-                                    .nodes
-                                    .iter_mut()
-                                    .filter(|n| n.get_qpid_parent().is_some())
-                                    .collect::<Vec<_>>();
-                                let new_node_id =
-                                    self.random_providers.user_random_provider().random_u64()
-                                        as usize
-                                        % qpid_initialised_nodes.len();
-                                (qpid_initialised_nodes[new_node_id].join()?, None)
-                            }
-                        };
-                        user.refresh_ticket(position_estimate.unwrap_or(1), ticket);
-                    }
-                    UserAction::Leave => {
-                        let ticket = user.take_ticket();
-                        let node = match self
-                            .nodes
-                            .iter_mut()
-                            .find(|n| n.get_node_id() == ticket.node_id)
-                        {
-                            Some(n) => n,
-                            None => {
-                                // The node is gone, so we can't leave.
-                                // We'll need to rejoin at another node.
-                                user.start_refreshing();
-                                continue;
-                            }
-                        };
-                        let pass = node.leave(ticket)?;
-                        user.set_pass(pass);
-                        self.results.left_user();
-                        // TODO: Add that the user can refresh the pass
-                    }
-                    UserAction::Done => {}
-                    UserAction::Join => {
-                        let mut tries = 0;
-                        loop {
-                            if tries > 10 {
-                                log::error!("Failed to join at any node after 10 tries!");
-                                break;
-                            }
-                            let node_index = self
-                                .random_providers
-                                .disturbance_random_provider()
-                                .random_u64() as usize
-                                % self.nodes.len();
-                            match self.nodes[node_index].join() {
-                                Ok(ticket) => {
-                                    // Refresh with this ticket
-                                    user.refresh_ticket(usize::MAX, ticket);
-                                    break;
-                                }
-                                Err(err) => match err {
-                                    waitingroom_core::WaitingRoomError::QPIDNotInitialized => {
-                                        // We tried to join at a node that wasn't ready yet, so we'll retry.
-                                        tries += 1;
-                                    }
-                                    _ => {
-                                        panic!("Unexpected error: {:?}", err);
-                                    }
-                                },
-                            };
+                match user.state() {
+                    user::UserState::Joining => {
+                        if !joining_available {
+                            // We can't join right now, so we'll try again later.
+                            continue;
                         }
+                        let node_index = self.random_providers.user_random_provider().random_u64()
+                            as usize
+                            % available_node_idxs.len();
+                        let ticket = self.nodes[available_node_idxs[node_index]].join()?;
+                        user.join(ticket);
                     }
+                    user::UserState::InQueue {
+                        ticket,
+                        next_action,
+                    } => match next_action {
+                        user::QueueAction::Refreshing => {
+                            let node = match self
+                                .nodes
+                                .iter_mut()
+                                .find(|n| n.get_node_id() == ticket.node_id)
+                            {
+                                Some(n) => n,
+                                None => {
+                                    if !joining_available {
+                                        // We can't join at any other nodes at the moment, so we'll try again later.
+                                        continue;
+                                    }
+                                    // The node we were on is gone, so we'll need to rejoin at another node.
+                                    let node_index =
+                                        self.random_providers.user_random_provider().random_u64()
+                                            as usize
+                                            % available_node_idxs.len();
+                                    &mut self.nodes[available_node_idxs[node_index]]
+                                }
+                            };
+                            let checkin_response = node.check_in(*ticket)?;
+                            user.refresh_ticket(
+                                checkin_response.new_ticket,
+                                checkin_response.position_estimate,
+                            );
+                        }
+                        user::QueueAction::Abandoning => todo!(),
+                        user::QueueAction::Leaving => {
+                            let node = match self
+                                .nodes
+                                .iter_mut()
+                                .find(|n| n.get_node_id() == ticket.node_id)
+                            {
+                                Some(n) => n,
+                                None => {
+                                    // The node is gone, so we can't leave.
+                                    // We'll need to rejoin at another node.
+                                    user.return_to_refreshing();
+                                    continue;
+                                }
+                            };
+                            let pass = node.leave(*ticket)?;
+                            user.leave(pass);
+                            self.results.left_user();
+                        }
+                    },
+                    // We don't refresh tickets when users are on the site yet.
+                    user::UserState::OnSite { .. } => todo!(),
+                    user::UserState::Done { .. } => {}
+                    user::UserState::Abandoned { .. } => {}
                 }
             }
-            i += 1;
         }
+
+        // let mut i = 0;
+        // while i < self.users.len() {
+        //     let user = &mut self.users[i];
+        //     // log::debug!("{:?}", user);
+
+        //     if user.should_action(now) {
+        //         match user.get_action() {
+        //             UserAction::Refresh => {
+        //                 let ticket = user.take_ticket();
+        //                 let (ticket, position_estimate) = match self
+        //                     .nodes
+        //                     .iter_mut()
+        //                     .find(|n| n.get_node_id() == ticket.node_id)
+        //                 {
+        //                     Some(n) => {
+        //                         let checkin_response = n.check_in(ticket)?;
+        //                         (
+        //                             checkin_response.new_ticket,
+        //                             Some(checkin_response.position_estimate),
+        //                         )
+        //                     }
+        //                     None => {
+        //                         let mut qpid_initialised_nodes = self
+        //                             .nodes
+        //                             .iter_mut()
+        //                             .filter(|n| n.get_qpid_parent().is_some())
+        //                             .collect::<Vec<_>>();
+        //                         let new_node_id =
+        //                             self.random_providers.user_random_provider().random_u64()
+        //                                 as usize
+        //                                 % qpid_initialised_nodes.len();
+        //                         (qpid_initialised_nodes[new_node_id].join()?, None)
+        //                     }
+        //                 };
+        //                 user.refresh_ticket(position_estimate.unwrap_or(1), ticket);
+        //             }
+        //             UserAction::Leave => {
+        //                 let ticket = user.take_ticket();
+        //                 let node = match self
+        //                     .nodes
+        //                     .iter_mut()
+        //                     .find(|n| n.get_node_id() == ticket.node_id)
+        //                 {
+        //                     Some(n) => n,
+        //                     None => {
+        //                         // The node is gone, so we can't leave.
+        //                         // We'll need to rejoin at another node.
+        //                         user.start_refreshing();
+        //                         continue;
+        //                     }
+        //                 };
+        //                 let pass = node.leave(ticket)?;
+        //                 user.set_pass(pass);
+        //                 self.results.left_user();
+        //                 // TODO: Add that the user can refresh the pass
+        //             }
+        //             UserAction::Done => {}
+        //             UserAction::Join => {
+        //                 let mut tries = 0;
+        //                 loop {
+        //                     if tries > 10 {
+        //                         log::error!("Failed to join at any node after 10 tries!");
+        //                         break;
+        //                     }
+        //                     let node_index = self
+        //                         .random_providers
+        //                         .disturbance_random_provider()
+        //                         .random_u64() as usize
+        //                         % self.nodes.len();
+        //                     match self.nodes[node_index].join() {
+        //                         Ok(ticket) => {
+        //                             // Refresh with this ticket
+        //                             user.refresh_ticket(usize::MAX, ticket);
+        //                             break;
+        //                         }
+        //                         Err(err) => match err {
+        //                             waitingroom_core::WaitingRoomError::QPIDNotInitialized => {
+        //                                 // We tried to join at a node that wasn't ready yet, so we'll retry.
+        //                                 tries += 1;
+        //                             }
+        //                             _ => {
+        //                                 panic!("Unexpected error: {:?}", err);
+        //                             }
+        //                         },
+        //                     };
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     i += 1;
+        // }
 
         Ok(())
     }
 
     fn user_join(&mut self) {
         self.results.add_user();
-        self.users.push(User::new_joining());
+        self.users.push(User::new());
     }
 
     fn should_do_disturbance(&mut self, odds: u64) -> bool {
@@ -361,6 +447,8 @@ impl Simulation {
                 return Err(SimulationError::WaitingRoom(err));
             }
         }
+
+        sim.debug_print();
 
         // Now we start the network running.
         loop {

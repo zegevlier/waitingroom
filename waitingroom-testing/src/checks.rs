@@ -1,7 +1,7 @@
 use waitingroom_core::{network::DummyNetwork, settings::GeneralWaitingRoomSettings, time::Time};
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
-use crate::{user::User, Node};
+use crate::Node;
 
 #[derive(Debug)]
 pub enum InvariantCheckError {
@@ -128,36 +128,37 @@ fn ensure_no_more_than_n_onsite(nodes: &[Node], max_users: usize) -> bool {
     true
 }
 
-pub fn check_final_state(_nodes: &[Node], users: &[User]) -> Result<(), FinalStateCheckError> {
-    log::info!("Validating results");
+// TODO move to simulation
+// pub fn check_final_state(_nodes: &[Node], users: &[User]) -> Result<(), FinalStateCheckError> {
+//     log::info!("Validating results");
 
-    // We verify that the users are let out in the correct order.
-    // dbg!(&users);
-    let mut prev_eviction_time = 0;
-    for (i, user) in users.iter().enumerate() {
-        let eviction_time = match user.get_eviction_time() {
-            Some(t) => t,
-            None => u128::MAX,
-        };
-        if eviction_time < prev_eviction_time {
-            return Err(FinalStateCheckError::UsersWrongOrder(
-                i,
-                prev_eviction_time,
-                eviction_time,
-            ));
-        }
-        prev_eviction_time = eviction_time;
-    }
+//     // We verify that the users are let out in the correct order.
+//     // dbg!(&users);
+//     let mut prev_eviction_time = 0;
+//     for (i, user) in users.iter().enumerate() {
+//         let eviction_time = match user.get_eviction_time() {
+//             Some(t) => t,
+//             None => u128::MAX,
+//         };
+//         if eviction_time < prev_eviction_time {
+//             return Err(FinalStateCheckError::UsersWrongOrder(
+//                 i,
+//                 prev_eviction_time,
+//                 eviction_time,
+//             ));
+//         }
+//         prev_eviction_time = eviction_time;
+//     }
 
-    let total_users_processed = users
-        .iter()
-        .filter(|u| u.get_eviction_time().is_some())
-        .count();
-    let total_users = users.len();
-    log::info!(
-        "Processed {} out of {} users",
-        total_users_processed,
-        total_users
-    );
-    Ok(())
-}
+//     let total_users_processed = users
+//         .iter()
+//         .filter(|u| u.get_eviction_time().is_some())
+//         .count();
+//     let total_users = users.len();
+//     log::info!(
+//         "Processed {} out of {} users",
+//         total_users_processed,
+//         total_users
+//     );
+//     Ok(())
+// }

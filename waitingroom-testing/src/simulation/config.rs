@@ -1,6 +1,6 @@
 use waitingroom_core::{network::LatencySetting, settings::GeneralWaitingRoomSettings, time::Time};
 
-use crate::user::UserBehaviour;
+use super::UserBehaviour;
 
 pub struct SimulationConfig {
     pub settings: GeneralWaitingRoomSettings,

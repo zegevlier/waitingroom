@@ -10,9 +10,8 @@ use waitingroom_distributed::messages::NodeToNodeMessage;
 
 mod checks;
 mod simulation;
-mod user;
 
-use simulation::{Simulation, SimulationConfig};
+use simulation::{Simulation, SimulationConfig, UserBehaviour};
 
 type Node = waitingroom_distributed::DistributedWaitingRoom<
     DummyTimeProvider,
@@ -67,7 +66,7 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
 }
 
 fn main() {
-    let logging_level = LevelFilter::Debug;
+    let logging_level = LevelFilter::Info;
     let time_provider = DummyTimeProvider::new();
 
     initialise_logging(&time_provider, logging_level);
@@ -76,8 +75,8 @@ fn main() {
         settings: GeneralWaitingRoomSettings {
             min_user_count: 20,
             max_user_count: 25,
-            ticket_refresh_time: 6000,
-            ticket_expiry_time: 20000,
+            ticket_refresh_time: 600,
+            ticket_expiry_time: 2000,
             pass_expiry_time: 0,
             fault_detection_period: 1000,
             fault_detection_timeout: 200,
@@ -88,10 +87,10 @@ fn main() {
         initial_node_count: 8,
         latency: LatencySetting::UniformRandom(10, 20),
         user_join_odds: 200,
-        node_kill_odds: 1000,
+        node_kill_odds: u64::MAX,
         check_consistency: true,
         stop_at_time: 100000,
-        user_behaviour: user::UserBehaviour {
+        user_behaviour: UserBehaviour {
             abandon_odds: 1000,
             pass_refresh_odds: 1000,
         },

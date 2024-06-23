@@ -2144,6 +2144,7 @@ dependencies = [
  "fern",
  "kendall-tau",
  "log",
+ "strum",
  "waitingroom-core",
  "waitingroom-distributed",
 ]
