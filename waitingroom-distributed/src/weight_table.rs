@@ -56,7 +56,7 @@ impl WeightTable {
     pub fn set(&mut self, node_id: NodeId, weight: Time, update_iteration: u64) {
         if let Some(prev_last_update) = self.get_last_update(node_id) {
             if update_iteration < prev_last_update {
-                log::warn!(
+                log::info!(
                     "[NODE {}] Tried to set weight for node {} with last_update {} to {} but it was already set to {}",
                     self.node_id,
                     node_id,

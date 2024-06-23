@@ -1,5 +1,6 @@
 use fern::colors::ColoredLevelConfig;
 use log::LevelFilter;
+use rayon::prelude::*;
 use waitingroom_core::{
     network::{DummyNetwork, LatencySetting},
     random::DeterministicRandomProvider,
@@ -61,6 +62,7 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
         .chain(std::io::stdout())
         // .chain(file)
         .level_for("waitingroom_core::random", log::LevelFilter::Info)
+        .level_for("waitingroom_distributed", log::LevelFilter::Warn)
         .apply()
         .unwrap();
 }
@@ -98,8 +100,10 @@ fn main() {
 
     let simulation = Simulation::new(config);
 
-    match simulation.run(0) {
-        Ok(results) => log::info!("Simulation completed successfully: {:?}", results),
-        Err(e) => log::error!("Simulation failed: {:?}", e),
-    }
+    (0..1000)
+        .into_par_iter()
+        .for_each(|seed| match simulation.run(seed) {
+            Ok(results) => log::info!("Simulation {} completed successfully: {:?}", seed, results),
+            Err(e) => log::error!("Simulation failed: {:?}", e),
+        });
 }

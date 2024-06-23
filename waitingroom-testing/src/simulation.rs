@@ -106,21 +106,21 @@ impl RunningSimulation {
     }
 
     fn debug_print(&self) {
-        log::info!("Debug printing node states");
-        log::info!("Time: {}", self.time_provider.get_now_time());
-        log::info!("Number of network messages: {}", self.network.len());
-        log::info!("Number of users: {}", self.users.len());
-        log::info!("Number of nodes: {}\nNodes:", self.nodes.len());
+        log::debug!("Debug printing node states");
+        log::debug!("Time: {}", self.time_provider.get_now_time());
+        log::debug!("Number of network messages: {}", self.network.len());
+        log::debug!("Number of users: {}", self.users.len());
+        log::debug!("Number of nodes: {}\nNodes:", self.nodes.len());
         for node in self.nodes.iter() {
-            log::info!(
+            log::debug!(
                 "Node {}\t\tQPID parent: {:?}",
                 node.get_node_id(),
                 node.get_qpid_parent()
             );
-            log::info!("Weight table:");
-            log::info!("Neighbour\t\tWeight");
+            log::debug!("Weight table:");
+            log::debug!("Neighbour\t\tWeight");
             for (neighbour, weight) in node.get_qpid_weight_table().all_weights() {
-                log::info!("{}\t\t\t\t{}", neighbour, weight);
+                log::debug!("{}\t\t\t\t{}", neighbour, weight);
             }
         }
     }
@@ -438,9 +438,7 @@ impl Simulation {
         let mut sim = RunningSimulation::new(&self.config, seed);
 
         match sim.initialise_network(self.config.initial_node_count) {
-            Ok(_) => {
-                log::info!("Network initialised");
-            }
+            Ok(_) => {}
             Err(err) => {
                 log::error!("Failed to initialise network: {:?}", err);
                 sim.debug_print();
