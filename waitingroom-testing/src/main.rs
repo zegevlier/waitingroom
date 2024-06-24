@@ -100,7 +100,7 @@ fn main() {
     };
 
     let simulation = Simulation::new(config);
-    dbg!(simulation.run(3).unwrap());
+    dbg!(simulation.run(23).unwrap());
 
     // (0..1000)
     //     .into_iter()

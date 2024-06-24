@@ -246,13 +246,9 @@ where
             // self.qpid_parent = None; // We don't know who the parent should be, so we set it to None.
         } else if any_removed {
             // We've only removed neighbours. We can just recompute the parent.
-            let new_parent = self.qpid_weight_table.get_smallest().unwrap();
-            log::debug!(
-                "[{}] Removed neighbours. New parent: {}",
-                self.node_id,
-                new_parent
-            );
-            self.qpid_parent = Some(new_parent);
+            // This happens in the heuristic set below here.
+            self.qpid_parent = None;
+            log::debug!("[{}] Removed neighbours, finding new parent", self.node_id);
         }
         self.spanning_tree = tree;
 
@@ -266,6 +262,11 @@ where
 
     fn remove_neighbour(&mut self, neighbour: NodeId) {
         log::debug!("[{}] Removing neighbour {}", self.node_id, neighbour);
+        if self.qpid_parent == Some(neighbour) {
+            // We're removing the current parent, so we'll need to send a find root once we know the new parent.
+            self.qpid_parent = None;
+            self.should_send_find_root = true;
+        }
         // Removing a neighbour is easier than adding one. We just remove its entry from the table.
         self.qpid_weight_table.remove(neighbour);
     }

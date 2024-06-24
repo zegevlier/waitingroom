@@ -83,6 +83,24 @@ where
                 self.qpid_weight_table
                     .compute_weight(self.qpid_parent.unwrap()),
             );
+
+            // If we found our parent here, we need to send some more updates, since we didn't have the most up to date info before.
+            for node in self.qpid_weight_table.all_neighbours() {
+                if node == self.qpid_parent.unwrap() || node == self.node_id {
+                    continue;
+                }
+                let updated_weight = self.qpid_weight_table.compute_weight(node);
+                let updated_iteration = self.get_update_iteration(node);
+                self.network_handle
+                    .send_message(
+                        node,
+                        NodeToNodeMessage::QPIDUpdateMessage {
+                            weight: updated_weight,
+                            updated_iteration,
+                        },
+                    )
+                    .unwrap();
+            }
         }
 
         if self.qpid_parent.unwrap() == self.node_id {
@@ -287,6 +305,29 @@ where
             );
             // Otherwise, the value that will lead us to the lowest node ID is our parent.
             self.qpid_parent = Some(self.spanning_tree.towards_lowest_id(self.node_id));
+        }
+
+        // We've found a new parent, if we needed to send a find root, we do it here.
+        if self.should_send_find_root {
+            if self.qpid_parent.unwrap() == self.node_id {
+                // We shouldn't send a find root to ourselves.
+                return true;
+            }
+            let w_v_parent_v = self
+                .qpid_weight_table
+                .compute_weight(self.qpid_parent.unwrap());
+            let updated_iteration = self.get_update_iteration(self.qpid_parent.unwrap());
+            self.network_handle
+                .send_message(
+                    self.qpid_parent.unwrap(),
+                    NodeToNodeMessage::QPIDFindRootMessage {
+                        weight: w_v_parent_v,
+                        last_eviction: self.count_iteration,
+                        updated_iteration,
+                    },
+                )
+                .unwrap();
+            self.should_send_find_root = false;
         }
         true
     }

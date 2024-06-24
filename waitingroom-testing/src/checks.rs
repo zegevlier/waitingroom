@@ -22,10 +22,10 @@ pub fn check_consistent_state(
         if !verify_qpid_invariant(nodes) {
             return Err(InvariantCheckError::QpidNode);
         }
-    }
 
-    if !ensure_only_single_root(nodes) {
-        return Err(InvariantCheckError::SingleRoot);
+        if !ensure_only_single_root(nodes) {
+            return Err(InvariantCheckError::SingleRoot);
+        }
     }
 
     if !ensure_no_more_than_n_onsite(nodes, settings.max_user_count) {

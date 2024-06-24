@@ -86,6 +86,9 @@ where
     fd_last_check_node: Option<NodeId>,
     /// The fault detection queue contains the nodes that need to be checked. When it is empty, it gets refilled with all nodes in a random order.
     fd_queue: Vec<NodeId>,
+
+    // TODO Write docs
+    should_send_find_root: bool,
 }
 
 impl<T, R, N> WaitingRoomUserTriggered for DistributedWaitingRoom<T, R, N>
@@ -488,6 +491,7 @@ where
             count_parent: None,
             fd_last_check_node: None,
             qpid_parent: None,
+            should_send_find_root: false
         }
     }
 
@@ -515,7 +519,9 @@ where
         }
         // We only call QPID insert if the current join time is less than the current QPID weight.
         // This means that all inserts that are *not* at the front of the queue don't make any QPID messages, which is nice.
-        if (ticket.join_time, ticket.identifier) < self.qpid_weight_table.get_weight(self.node_id).unwrap() {
+        if (ticket.join_time, ticket.identifier)
+            < self.qpid_weight_table.get_weight(self.node_id).unwrap()
+        {
             self.qpid_insert((ticket.join_time, ticket.identifier))?;
         }
         Ok(())

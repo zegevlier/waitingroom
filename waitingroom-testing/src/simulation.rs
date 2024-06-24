@@ -113,6 +113,7 @@ impl RunningSimulation {
         log::debug!("Debug printing node states");
         log::debug!("Time: {}", self.time_provider.get_now_time());
         log::debug!("Number of network messages: {}", self.network.len());
+        log::debug!("{:?}", self.network.get_messages_mut());
         log::debug!("Number of users: {}", self.users.len());
         log::debug!("Number of nodes: {}\nNodes:", self.nodes.len());
         for node in self.nodes.iter() {
@@ -131,7 +132,7 @@ impl RunningSimulation {
 
     fn final_checks_and_results(
         self,
-        check_consistency: bool
+        check_consistency: bool,
     ) -> Result<SimulationResults, SimulationError> {
         // We'll check if we're in all the right states.
         // If we're not, this function will panic.
@@ -152,7 +153,9 @@ impl RunningSimulation {
 
         let normalised_kendall_tau = kendall_tau::normalised_kendall_tau(&x, &y);
 
-        Ok(self.results.build(normalised_kendall_tau, self.time_provider.get_now_time()))
+        Ok(self
+            .results
+            .build(normalised_kendall_tau, self.time_provider.get_now_time()))
     }
 
     fn process_messages(&mut self) -> Result<(), WaitingRoomError> {
@@ -393,6 +396,10 @@ impl Simulation {
         loop {
             sim.tick_time();
             let now = sim.get_now_time();
+
+            if now == 82528 - 29 {
+                sim.debug_print();
+            }
 
             // We'll check if we're in all the right states.
             // If we're not, this function will panic.
