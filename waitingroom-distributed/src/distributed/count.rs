@@ -157,4 +157,8 @@ where
     pub fn in_queue_count(&self) -> usize {
         self.local_queue.len()
     }
+
+    pub fn in_queue_leaving_count(&self) -> usize {
+        self.local_queue_leaving_list.len()
+    }
 }

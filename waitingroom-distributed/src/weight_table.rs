@@ -1,9 +1,11 @@
 use waitingroom_core::{time::Time, NodeId};
 
+pub type Weight = (Time, u64);
+
 #[derive(Debug, Clone)]
 struct Entry {
     update_iteration: u64,
-    weight: Time,
+    weight: Weight,
 }
 
 #[derive(Debug)]
@@ -21,7 +23,7 @@ impl WeightTable {
         }
     }
 
-    pub fn from_vec(node_id: NodeId, table: Vec<(NodeId, Time)>) -> Self {
+    pub fn from_vec(node_id: NodeId, table: Vec<(NodeId, Weight)>) -> Self {
         WeightTable {
             table: table
                 .iter()
@@ -39,7 +41,7 @@ impl WeightTable {
         }
     }
 
-    pub fn get_weight(&self, node_id: NodeId) -> Option<Time> {
+    pub fn get_weight(&self, node_id: NodeId) -> Option<Weight> {
         self.table
             .iter()
             .find(|(id, _)| *id == node_id)
@@ -53,11 +55,11 @@ impl WeightTable {
             .map(|(_, entry)| entry.update_iteration)
     }
 
-    pub fn set(&mut self, node_id: NodeId, weight: Time, update_iteration: u64) {
+    pub fn set(&mut self, node_id: NodeId, weight: Weight, update_iteration: u64) {
         if let Some(prev_last_update) = self.get_last_update(node_id) {
             if update_iteration < prev_last_update {
                 log::info!(
-                    "[NODE {}] Tried to set weight for node {} with last_update {} to {} but it was already set to {}",
+                    "[NODE {}] Tried to set weight for node {} with last_update {} to {:?} but it was already set to {}",
                     self.node_id,
                     node_id,
                     update_iteration,
@@ -87,13 +89,13 @@ impl WeightTable {
         self.table.retain(|(id, _)| *id != node_id);
     }
 
-    pub fn compute_weight(&self, node_id: NodeId) -> Time {
+    pub fn compute_weight(&self, node_id: NodeId) -> Weight {
         self.table
             .iter()
             .filter(|(id, _)| node_id == self.node_id || *id != node_id)
             .map(|(_, entry)| entry.weight)
             .min()
-            .unwrap_or(Time::MAX)
+            .unwrap_or((Time::MAX, 0))
     }
 
     pub fn get_smallest(&self) -> Option<NodeId> {
@@ -107,7 +109,7 @@ impl WeightTable {
     pub fn any_not_max(&self) -> bool {
         self.table
             .iter()
-            .any(|(_, entry)| entry.weight != Time::MAX)
+            .any(|(_, entry)| entry.weight.0 != Time::MAX)
     }
 
     pub fn neighbour_count(&self) -> usize {
@@ -118,7 +120,7 @@ impl WeightTable {
         self.table.iter().map(|(id, _)| *id).collect()
     }
 
-    pub fn all_weights(&self) -> Vec<(NodeId, Time)> {
+    pub fn all_weights(&self) -> Vec<(NodeId, Weight)> {
         self.table
             .iter()
             .map(|(id, entry)| (*id, entry.weight))

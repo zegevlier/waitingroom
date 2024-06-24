@@ -8,7 +8,7 @@ use waitingroom_core::{
 
 use test_log::test;
 
-use crate::{messages::NodeToNodeMessage, DistributedWaitingRoom};
+use crate::{messages::NodeToNodeMessage, weight_table::Weight, DistributedWaitingRoom};
 
 type Node = DistributedWaitingRoom<
     DummyTimeProvider,
@@ -39,7 +39,7 @@ fn basic_test() {
         dummy_network,
     );
 
-    node.testing_overwrite_qpid(Some(1), vec![(1, Time::MAX)]);
+    node.testing_overwrite_qpid(Some(1), vec![(1, (Time::MAX, 0))]);
 
     let ticket = node.join().unwrap();
     node.qpid_delete_min().unwrap();
@@ -80,7 +80,8 @@ fn simple_distributed_test() {
 
     let node_count = 2;
     log::info!("Creating {} waitingroom nodes", node_count);
-    let init_weight_table: Vec<(NodeId, Time)> = (0..node_count).map(|v| (v, Time::MAX)).collect();
+    let init_weight_table: Vec<(NodeId, Weight)> =
+        (0..node_count).map(|v| (v, (Time::MAX, 0))).collect();
     for node_id in 0..node_count {
         let mut node = DistributedWaitingRoom::new(
             settings,
@@ -152,7 +153,8 @@ fn check_letting_users_out_of_queue_on_timer() {
 
     let node_count = 2;
     log::info!("Creating {} waitingroom nodes", node_count);
-    let init_weight_table: Vec<(NodeId, Time)> = (0..node_count).map(|v| (v, Time::MAX)).collect();
+    let init_weight_table: Vec<(NodeId, Weight)> =
+        (0..node_count).map(|v| (v, (Time::MAX, 0))).collect();
     for node_id in 0..node_count {
         let mut node = DistributedWaitingRoom::new(
             settings,
@@ -262,7 +264,8 @@ fn simple_fault_test() {
 
     let node_count = 2;
     log::info!("Creating {} waitingroom nodes", node_count);
-    let init_weight_table: Vec<(NodeId, Time)> = (0..node_count).map(|v| (v, Time::MAX)).collect();
+    let init_weight_table: Vec<(NodeId, Weight)> =
+        (0..node_count).map(|v| (v, (Time::MAX, 0))).collect();
     for node_id in 0..node_count {
         let mut node = DistributedWaitingRoom::new(
             settings,
@@ -368,7 +371,10 @@ fn multi_node() {
         );
         node.testing_overwrite_qpid(
             Some(*parent),
-            neighbour_config.iter().map(|v| (*v, Time::MAX)).collect(),
+            neighbour_config
+                .iter()
+                .map(|v| (*v, (Time::MAX, 0)))
+                .collect(),
         );
         nodes.push(node);
     }
@@ -415,7 +421,7 @@ fn debug_print_qpid_info_for_nodes(nodes: &[Node]) {
         log::info!("Weight table:");
         log::info!("Neighbour\t\tWeight");
         for (neighbour, weight) in node.qpid_weight_table.all_weights() {
-            log::info!("{}\t\t\t\t{}", neighbour, weight);
+            log::info!("{}\t\t\t\t{:?}", neighbour, weight);
         }
     }
 }
@@ -475,7 +481,7 @@ fn mid_eviction_time_root_change() {
 
     let node_count = 2;
     log::info!("Creating {} waitingroom nodes", node_count);
-    let init_weight_table: Vec<(NodeId, Time)> = (0..node_count).map(|v| (v, Time::MAX)).collect();
+    let init_weight_table: Vec<(NodeId, Weight)> = (0..node_count).map(|v| (v, (Time::MAX, 0))).collect();
     for node_id in 0..node_count {
         let mut node = DistributedWaitingRoom::new(
             settings,
@@ -790,6 +796,4 @@ fn membership_regression_joins() {
 }
 
 #[test]
-fn update_invariant_fail_reg() {
-
-}
+fn update_invariant_fail_reg() {}

@@ -2,7 +2,7 @@ use waitingroom_core::{
     network::DummyNetwork,
     random::RandomProvider,
     settings::GeneralWaitingRoomSettings,
-    time::{DummyTimeProvider, TimeProvider},
+    time::{DummyTimeProvider, Time, TimeProvider},
     WaitingRoomError, WaitingRoomMessageTriggered, WaitingRoomTimerTriggered,
     WaitingRoomUserTriggered,
 };
@@ -71,7 +71,11 @@ impl RunningSimulation {
             self.random_providers.node_random_provider().clone(),
             self.network.clone(),
         );
-        node.join_at(0)?;
+        node.join_at(if self.nodes.is_empty() {
+            0
+        } else {
+            self.nodes[0].get_node_id()
+        })?;
 
         self.nodes.push(node);
         self.next_node_id += 1;
@@ -120,14 +124,14 @@ impl RunningSimulation {
             log::debug!("Weight table:");
             log::debug!("Neighbour\t\tWeight");
             for (neighbour, weight) in node.get_qpid_weight_table().all_weights() {
-                log::debug!("{}\t\t\t\t{}", neighbour, weight);
+                log::debug!("{}\t\t\t\t{:?}", neighbour, weight);
             }
         }
     }
 
     fn final_checks_and_results(
         self,
-        check_consistency: bool,
+        check_consistency: bool
     ) -> Result<SimulationResults, SimulationError> {
         // We'll check if we're in all the right states.
         // If we're not, this function will panic.
@@ -148,7 +152,7 @@ impl RunningSimulation {
 
         let normalised_kendall_tau = kendall_tau::normalised_kendall_tau(&x, &y);
 
-        Ok(self.results.build(normalised_kendall_tau))
+        Ok(self.results.build(normalised_kendall_tau, self.time_provider.get_now_time()))
     }
 
     fn process_messages(&mut self) -> Result<(), WaitingRoomError> {
@@ -305,14 +309,6 @@ impl RunningSimulation {
         self.users.push(User::new());
     }
 
-    fn should_do_disturbance(&mut self, odds: u64) -> bool {
-        self.random_providers
-            .disturbance_random_provider()
-            .random_u64()
-            % odds
-            == 0
-    }
-
     fn kill_node(&mut self) {
         if self.nodes.len() > 1 {
             // We don't want to kill the last node.
@@ -322,9 +318,35 @@ impl RunningSimulation {
                 .random_u64() as usize
                 % self.nodes.len();
             log::info!("Killing node {}", node_index);
+            self.network
+                .remove_node(self.nodes[node_index].get_node_id());
             self.nodes.remove(node_index);
             self.results.remove_node();
         }
+    }
+
+    fn plan_disturbances(&self, count: usize, before: u128) -> Vec<u128> {
+        let mut disturbance_timestamps = Vec::new();
+        for _ in 0..count {
+            disturbance_timestamps.push(
+                self.random_providers
+                    .disturbance_random_provider()
+                    .random_u64() as u128
+                    % before,
+            );
+        }
+        disturbance_timestamps.sort();
+        disturbance_timestamps
+    }
+
+    fn is_done(&self, end_timestamp: Time) -> bool {
+        end_timestamp < self.get_now_time()
+            && self
+                .nodes
+                .iter()
+                .map(|n| n.in_queue_count() + n.in_queue_leaving_count())
+                .sum::<usize>()
+                == 0
     }
 }
 
@@ -332,6 +354,7 @@ impl RunningSimulation {
 pub enum SimulationError {
     WaitingRoom(WaitingRoomError),
     InvariantCheck(InvariantCheckError),
+    SimulationTimeout,
 }
 
 impl Simulation {
@@ -353,11 +376,25 @@ impl Simulation {
             }
         }
 
+        let mut user_join_timestamps = sim.plan_disturbances(
+            self.config.total_user_count,
+            self.config.time_until_cooldown,
+        );
+        let mut node_kill_timestamps = sim.plan_disturbances(
+            self.config.nodes_killed_count,
+            self.config.time_until_cooldown,
+        );
+        let mut node_join_timestamps = sim.plan_disturbances(
+            self.config.nodes_added_count,
+            self.config.time_until_cooldown,
+        );
+
         sim.debug_print();
 
         // Now we start the network running.
         loop {
             sim.tick_time();
+            let now = sim.get_now_time();
 
             // We'll check if we're in all the right states.
             // If we're not, this function will panic.
@@ -399,18 +436,20 @@ impl Simulation {
             }
 
             // Add new users
-            if sim.should_do_disturbance(self.config.user_join_odds) {
+            while !user_join_timestamps.is_empty() && user_join_timestamps[0] <= now {
+                user_join_timestamps.remove(0);
                 sim.user_join();
             }
 
             // Kill nodes
-            if sim.should_do_disturbance(self.config.node_kill_odds) {
+            while !node_kill_timestamps.is_empty() && node_kill_timestamps[0] <= now {
+                node_kill_timestamps.remove(0);
                 sim.kill_node();
             }
 
             // And add nodes
-            if sim.should_do_disturbance(self.config.node_kill_odds) {
-                log::info!("Adding node to network");
+            if !node_join_timestamps.is_empty() && node_join_timestamps[0] <= now {
+                node_join_timestamps.remove(0);
                 match sim.add_node() {
                     Ok(_) => {}
                     Err(err) => {
@@ -419,9 +458,18 @@ impl Simulation {
                 }
             }
 
-            // Stop the network after a number of time steps
-            if sim.get_now_time() > self.config.stop_at_time {
+            // We wait until the required amount of time has passed and the network is done.
+            if sim.get_now_time() == self.config.time_until_cooldown {
+                sim.debug_print();
+            }
+
+            if sim.is_done(self.config.time_until_cooldown) {
                 break;
+            }
+
+            if sim.is_done(self.config.time_until_cooldown) {
+                // This is a failure, we should have been done by now.
+                return Err(SimulationError::SimulationTimeout);
             }
         }
 

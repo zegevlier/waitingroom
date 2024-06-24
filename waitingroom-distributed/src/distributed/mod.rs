@@ -1,4 +1,4 @@
-use crate::messages::NodeToNodeMessage;
+use crate::{messages::NodeToNodeMessage, weight_table::Weight};
 use waitingroom_core::{
     network::{Network, NetworkHandle},
     pass::Pass,
@@ -355,8 +355,8 @@ where
         // If we have a last check node, and we haven't had a response after the timeout, we consider the node to be down.
         if let Some(last_check_node) = self.fd_last_check_node {
             if now_time - self.fd_last_check_time > self.settings.fault_detection_timeout {
-                log::warn!("[NODE {}] node {} is down", self.node_id, last_check_node);
-                // TODO: Implement recovery.
+                log::info!("[NODE {}] node {} is down", self.node_id, last_check_node);
+                self.remove_node(last_check_node)?;
                 // We set the last check node to None.
                 self.fd_last_check_node = None;
             }
@@ -496,7 +496,7 @@ where
     pub fn testing_overwrite_qpid(
         &mut self,
         parent: Option<NodeId>,
-        weight_table: Vec<(NodeId, Time)>,
+        weight_table: Vec<(NodeId, Weight)>,
     ) {
         self.qpid_parent = parent;
         self.qpid_weight_table = WeightTable::from_vec(self.node_id, weight_table);
@@ -515,8 +515,8 @@ where
         }
         // We only call QPID insert if the current join time is less than the current QPID weight.
         // This means that all inserts that are *not* at the front of the queue don't make any QPID messages, which is nice.
-        if ticket.join_time < self.qpid_weight_table.get_weight(self.node_id).unwrap() {
-            self.qpid_insert(ticket.join_time)?;
+        if (ticket.join_time, ticket.identifier) < self.qpid_weight_table.get_weight(self.node_id).unwrap() {
+            self.qpid_insert((ticket.join_time, ticket.identifier))?;
         }
         Ok(())
     }

@@ -19,7 +19,7 @@ where
         if at == self.node_id {
             self.initialise_alone()
         } else {
-            self.qpid_weight_table.set(self.node_id, Time::MAX, 0);
+            self.qpid_weight_table.set(self.node_id, (Time::MAX, 0), 0);
             self.network_handle
                 .send_message(at, NodeToNodeMessage::NodeJoin(self.node_id))?;
             Ok(())
@@ -39,7 +39,7 @@ where
         log::debug!("[{}] Initialising alone", self.node_id);
         self.tree_iteration += 1;
         self.qpid_parent = Some(self.node_id);
-        self.qpid_weight_table.set(self.node_id, Time::MAX, 0);
+        self.qpid_weight_table.set(self.node_id, (Time::MAX, 0), 0);
         Ok(())
     }
 
@@ -254,6 +254,7 @@ where
             );
             self.qpid_parent = Some(new_parent);
         }
+        // self.qpid_parent = None;
         self.spanning_tree = tree;
 
         // We'll see if we have all the information we need to set a new QPID parent. If we do, we'll set it.

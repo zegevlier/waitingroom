@@ -6,7 +6,7 @@ use waitingroom_core::{
     NodeId, WaitingRoomError, WaitingRoomTimerTriggered,
 };
 
-use crate::{messages::NodeToNodeMessage, DistributedWaitingRoom};
+use crate::{messages::NodeToNodeMessage, weight_table::Weight, DistributedWaitingRoom};
 
 /// The buffer time is used to ensure we are a bit more lenient on the eviction interval.
 /// We don't want to evict too often.
@@ -20,7 +20,7 @@ where
 {
     /// For this, and all other QPID functions, see QPID paper and thesis for more information.
     /// Algorithm 1 - insert
-    pub(super) fn qpid_insert(&mut self, weight: Time) -> Result<(), WaitingRoomError> {
+    pub(super) fn qpid_insert(&mut self, weight: Weight) -> Result<(), WaitingRoomError> {
         if self.qpid_parent.is_none() {
             return Err(WaitingRoomError::QPIDNotInitialized);
         }
@@ -56,7 +56,7 @@ where
     pub(super) fn qpid_handle_update(
         &mut self,
         from_node: NodeId,
-        weight: Time,
+        weight: Weight,
         update_iteration: u64,
     ) -> Result<(), WaitingRoomError> {
         log::info!("[NODE {}] handle update", self.node_id);
@@ -146,11 +146,14 @@ where
         // Update current QPID weight
         match self.local_queue.peek() {
             Some(next_ticket) => {
-                self.qpid_weight_table
-                    .set(self.node_id, next_ticket.join_time, 0);
+                self.qpid_weight_table.set(
+                    self.node_id,
+                    (next_ticket.join_time, next_ticket.identifier),
+                    0,
+                );
             }
             None => {
-                self.qpid_weight_table.set(self.node_id, Time::MAX, 0);
+                self.qpid_weight_table.set(self.node_id, (Time::MAX, 0), 0);
             }
         }
 
@@ -200,7 +203,7 @@ where
     pub(super) fn qpid_handle_find_root(
         &mut self,
         from_node: NodeId,
-        weight: Time,
+        weight: Weight,
         last_eviction: Time,
         updated_iteration: u64,
     ) -> Result<(), WaitingRoomError> {
@@ -243,8 +246,17 @@ where
     }
 
     pub(crate) fn heuristic_set_qpid_parent(&mut self) -> bool {
-        if (self.qpid_weight_table.neighbour_count() + 1)
-            < self.spanning_tree.get_node(self.node_id).unwrap().len()
+        // If the qpid weight table does not contain all the spanning tree neighbours
+        // or if the spanning tree is empty, we can't initialize QPID yet.
+        let mut all_contained = true;
+        for node in self.spanning_tree.get_node(self.node_id).unwrap() {
+            if self.qpid_weight_table.get_weight(*node).is_none() {
+                all_contained = false;
+                break;
+            }
+        }
+
+        if !all_contained
             || self
                 .spanning_tree
                 .get_node(self.node_id)

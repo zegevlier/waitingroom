@@ -132,6 +132,13 @@ where
         }
     }
 
+    pub fn remove_node(&self, node: NodeId) {
+        self.nodes.borrow_mut().retain(|l| *l != node);
+        self.messages
+            .borrow_mut()
+            .retain(|m| m.message.to_node != node);
+    }
+
     fn send_message(
         &self,
         from_node: NodeId,
@@ -139,7 +146,10 @@ where
         message: M,
     ) -> Result<(), NetworkError> {
         if !self.nodes.borrow().contains(&to_node) {
-            return Err(NetworkError::DestNodeNotFound);
+            // We have a message that will never arrive, so we ignore it.
+            log::debug!("Network message sent to {} is being ignored, because this node is not in the network", to_node);
+            return Ok(());
+            // return Err(NetworkError::DestNodeNotFound);
         }
         let latency = match &self.latency {
             Latency::Fixed(latency) => *latency,

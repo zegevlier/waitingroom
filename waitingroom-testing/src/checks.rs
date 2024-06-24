@@ -73,7 +73,7 @@ fn verify_qpid_invariant(nodes: &[Node]) -> bool {
         // Now we assert the invariant
         if min_weight != w_v_parent_v {
             log::error!(
-                "Invariant failed for node {}. Min weight is {}, w_v_parent_v is {}",
+                "Invariant failed for node {}. Min weight is {:?}, w_v_parent_v is {:?}",
                 v.get_node_id(),
                 min_weight,
                 w_v_parent_v

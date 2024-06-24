@@ -58,7 +58,10 @@ fn main() {
         );
         node.testing_overwrite_qpid(
             Some(*parent),
-            neighbour_config.iter().map(|v| (*v, Time::MAX)).collect(),
+            neighbour_config
+                .iter()
+                .map(|v| (*v, (Time::MAX, 0)))
+                .collect(),
         );
         nodes.push(node);
     }

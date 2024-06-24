@@ -1,3 +1,5 @@
+use waitingroom_core::time::Time;
+
 /// This struct is used to store the results of a simulation.
 /// This should never be returned to the application, but instead be used `build` to create a `SimulationResults` struct.
 pub(super) struct SimulationResultsBuilder {
@@ -28,6 +30,9 @@ pub struct SimulationResults {
 
     /// The normalised kendall tau distance between the actual order of users leaving the waiting room and the expected order.
     pub kendall_tau: f64,
+
+    /// The time taken for the simulation to finish running in milliseconds.
+    pub time_taken: Time,
 }
 
 impl SimulationResultsBuilder {
@@ -58,13 +63,14 @@ impl SimulationResultsBuilder {
 
     /// Build the simulation results.
     /// The kendall_tau parameter is the normalised kendall tau distance between the actual order of users leaving the waiting room and the expected order.
-    pub fn build(self, kendall_tau: f64) -> SimulationResults {
+    pub fn build(self, kendall_tau: f64, time_taken: Time) -> SimulationResults {
         SimulationResults {
             total_users_added: self.total_users_added,
             total_users_left: self.total_users_left,
             total_nodes_added: self.total_nodes_added,
             total_nodes_removed: self.total_nodes_removed,
             kendall_tau,
+            time_taken,
         }
     }
 }
