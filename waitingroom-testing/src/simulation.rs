@@ -1,5 +1,5 @@
 use waitingroom_core::{
-    network::DummyNetwork,
+    network::{DummyNetwork, Latency},
     random::{DeterministicRandomProvider, RandomProvider},
     settings::GeneralWaitingRoomSettings,
     time::{DummyTimeProvider, TimeProvider},
@@ -14,14 +14,23 @@ use crate::{
     Node,
 };
 
-pub struct SimulationConfig {}
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SimulationConfig {
+    pub starting_node_count: usize,
+    pub min_user_count: usize,
+    pub max_user_count: usize,
+    pub latency: waitingroom_core::network::LatencySerde,
+    pub user_join_chance: u64,
+    pub node_kill_chance: u64,
+    pub output_file: String,
+}
 
-pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: SimulationConfig) {
-    let node_count = 8;
+pub fn run(seed: u64, time_provider: &DummyTimeProvider, simulation_config: SimulationConfig) {
+    let node_count = simulation_config.starting_node_count;
 
     let settings = GeneralWaitingRoomSettings {
-        min_user_count: 20,
-        max_user_count: 25,
+        min_user_count: simulation_config.min_user_count,
+        max_user_count: simulation_config.max_user_count,
         ticket_refresh_time: 6000,
         ticket_expiry_time: 20000,
         pass_expiry_time: 0,
@@ -32,8 +41,7 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
         cleanup_interval: 1000,
     };
 
-    // let latency = waitingroom_core::network::Latency::Fixed(10);
-    let latency = waitingroom_core::network::Latency::Random(1, 20, None);
+    let latency: Latency = simulation_config.latency.into();
 
     log::info!("Seed: {}", seed);
     // We use a separate random provider for the network, the nodes, and the disturbance.
@@ -131,7 +139,7 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
             time_provider,
         );
 
-        if disturbance_random_provider.random_u64() % 200 == 0 {
+        if disturbance_random_provider.random_u64() % simulation_config.user_join_chance == 0 {
             // We add a new user to a random node.
             let mut tries = 0;
             loop {
@@ -158,7 +166,7 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
             }
         }
 
-        if disturbance_random_provider.random_u64() % 2000 == 0 {
+        if disturbance_random_provider.random_u64() % simulation_config.node_kill_chance == 0 {
             // Kill a node.
             if !nodes.len() == 1 {
                 // We don't want to kill the last node.
@@ -169,7 +177,7 @@ pub fn run(seed: u64, time_provider: &DummyTimeProvider, _simulation_config: Sim
             }
         }
 
-        if disturbance_random_provider.random_u64() % 2000 == 0 {
+        if disturbance_random_provider.random_u64() % simulation_config.node_kill_chance == 0 {
             // Add a node
             nodes.push(waitingroom_distributed::DistributedWaitingRoom::new(
                 settings,

@@ -57,6 +57,21 @@ impl Latency {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum LatencySerde {
+    Fixed { latency: u128 },
+    Random { min: u128, max: u128 },
+}
+
+impl From<LatencySerde> for Latency {
+    fn from(latency: LatencySerde) -> Self {
+        match latency {
+            LatencySerde::Fixed { latency } => Latency::Fixed(latency),
+            LatencySerde::Random { min, max } => Latency::Random(min, max, None),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct DummyMessage<M> {
     message: Message<M>,

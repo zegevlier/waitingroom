@@ -1,0 +1,14 @@
+{
+    "starting_node_count": 8,
+    "min_user_count": 20,
+    "max_user_count": 9999999,
+    "latency": {
+        "Random": {
+            "min": 1,
+            "max": 20
+        }
+    },
+    "user_join_chance": 100,
+    "node_kill_chance": 2000,
+    "output_file": "./out_logs/%.csv"
+}

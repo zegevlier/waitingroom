@@ -21,24 +21,34 @@ type Node = waitingroom_distributed::DistributedWaitingRoom<
     DummyNetwork<NodeToNodeMessage>,
 >;
 
-fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFilter) {
+fn initialise_logging(
+    time_provider: &DummyTimeProvider,
+    logging_level: LevelFilter,
+    output_file: Option<String>,
+) {
     let colors = ColoredLevelConfig::new()
         .debug(fern::colors::Color::Cyan)
         .info(fern::colors::Color::Green)
         .warn(fern::colors::Color::Yellow)
         .error(fern::colors::Color::Red);
 
-    // #[allow(unused)]
-    // let file = OpenOptions::new()
-    //     .write(true)
-    //     .create(true)
-    //     .truncate(true)
-    //     .open("output.log")
-    //     .unwrap();
+    let file_output = output_file.is_some();
+    let output_file = output_file.map(|output_file| {
+        OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(output_file)
+            .unwrap()
+    });
 
     let time_provider_fern = time_provider.clone();
-    fern::Dispatch::new()
+    let dispatch = fern::Dispatch::new()
         .format(move |out, message, record| {
+            if file_output {
+                // We don't want extra formatting, just the message.
+                return out.finish(format_args!("{}", message));
+            }
             let start_length = record.target().len();
             let max_len = 30;
             let (target, target_padding) = if start_length > max_len {
@@ -60,8 +70,13 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
             ))
         })
         .level(logging_level)
-        .chain(std::io::stdout())
-        // .chain(file)
+        .chain(std::io::stdout());
+
+    let dispatch = match output_file {
+        Some(file) => dispatch.chain(file),
+        None => dispatch,
+    };
+    dispatch
         .level_for("waitingroom_core::random", log::LevelFilter::Info)
         .apply()
         .unwrap();
@@ -69,30 +84,47 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
 
 fn main() {
     // debug_run(878);
-    testing_run(0..10000);
+    testing_run(0..1000);
 }
 
-#[allow(unused)]
-fn debug_run(seed: u64) {
-    let logging_level = LevelFilter::Debug;
-    let time_provider = DummyTimeProvider::new();
+// #[allow(unused)]
+// fn debug_run(seed: u64) {
+//     let logging_level = LevelFilter::Debug;
+//     let time_provider = DummyTimeProvider::new();
 
-    initialise_logging(&time_provider, logging_level);
+//     initialise_logging(&time_provider, logging_level);
 
-    simulation::run(seed, &time_provider, SimulationConfig {});
-}
+//     simulation::run(seed, &time_provider, SimulationConfig {});
+// }
 
 #[allow(unused)]
 fn testing_run(seed_range: std::ops::Range<u64>) {
+    // Read the config values from the settings file as specified in the first argument.
+    let config_filename = std::env::args().nth(1).unwrap();
+    let config_text = std::fs::read_to_string(config_filename.clone()).unwrap();
+    let config: SimulationConfig = serde_json::from_str(&config_text).unwrap();
+
     let logging_level = LevelFilter::Error;
     let time_provider = DummyTimeProvider::new();
 
-    initialise_logging(&time_provider, logging_level);
+    let file_name = config_filename
+        .split('/')
+        .last()
+        .unwrap()
+        .split('.')
+        .next()
+        .unwrap();
+
+    initialise_logging(
+        &time_provider,
+        logging_level,
+        Some(config.output_file.clone().replace('%', file_name)),
+    );
 
     for seed in seed_range {
         time_provider.reset();
-        log::error!("Seed: {}", seed);
-        simulation::run(seed, &time_provider, SimulationConfig {});
+        // log::error!("Seed: {}", seed);
+        simulation::run(seed, &time_provider, config.clone());
     }
 }
 

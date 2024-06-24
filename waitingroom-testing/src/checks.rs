@@ -134,17 +134,26 @@ pub fn check_final_state(_nodes: &[Node], users: &[User]) -> Result<(), FinalSta
     // We verify that the users are let out in the correct order.
     // dbg!(&users);
     let mut prev_eviction_time = 0;
+    let mut wrong_order = 0;
     for (i, user) in users.iter().enumerate() {
         let eviction_time = match user.get_eviction_time() {
             Some(t) => t,
             None => u128::MAX,
         };
         if eviction_time < prev_eviction_time {
-            return Err(FinalStateCheckError::UsersWrongOrder(
+            // return Err(FinalStateCheckError::UsersWrongOrder(
+            //     i,
+            //     prev_eviction_time,
+            //     eviction_time,
+            // ));
+            log::error!(
+                "User {} was let out at time {} after user {} was let out at time {}",
                 i,
-                prev_eviction_time,
                 eviction_time,
-            ));
+                i - 1,
+                prev_eviction_time
+            );
+            wrong_order += 1;
         }
         prev_eviction_time = eviction_time;
     }
@@ -159,5 +168,6 @@ pub fn check_final_state(_nodes: &[Node], users: &[User]) -> Result<(), FinalSta
         total_users_processed,
         total_users
     );
+    log::error!("{},{},{}", total_users_processed, total_users, wrong_order);
     Ok(())
 }

@@ -1367,6 +1367,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "kendall-tau"
+version = "0.1.0"
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3018,6 +3022,8 @@ dependencies = [
  "env_logger",
  "fern",
  "log",
+ "serde",
+ "serde_json",
  "waitingroom-core",
  "waitingroom-distributed",
 ]
