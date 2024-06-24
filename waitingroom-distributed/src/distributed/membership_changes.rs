@@ -254,7 +254,6 @@ where
             );
             self.qpid_parent = Some(new_parent);
         }
-        // self.qpid_parent = None;
         self.spanning_tree = tree;
 
         // We'll see if we have all the information we need to set a new QPID parent. If we do, we'll set it.

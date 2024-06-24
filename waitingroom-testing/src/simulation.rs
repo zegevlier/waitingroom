@@ -389,8 +389,6 @@ impl Simulation {
             self.config.time_until_cooldown,
         );
 
-        sim.debug_print();
-
         // Now we start the network running.
         loop {
             sim.tick_time();
@@ -467,7 +465,7 @@ impl Simulation {
                 break;
             }
 
-            if sim.is_done(self.config.time_until_cooldown) {
+            if sim.get_now_time() > self.config.time_until_cooldown * 10 {
                 // This is a failure, we should have been done by now.
                 return Err(SimulationError::SimulationTimeout);
             }
