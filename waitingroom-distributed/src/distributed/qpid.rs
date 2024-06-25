@@ -35,19 +35,35 @@ where
                 .qpid_weight_table
                 .compute_weight(self.qpid_parent.unwrap());
             if new_w_v_parent_v != old_w_v_parent_v {
-                let updated_iteration = self.get_update_iteration(self.qpid_parent.unwrap());
-                self.network_handle
-                    .send_message(
-                        self.qpid_parent.unwrap(),
-                        NodeToNodeMessage::QPIDUpdateMessage {
-                            weight: new_w_v_parent_v,
-                            updated_iteration,
-                        },
-                    )
-                    .unwrap();
+                self.send_qpid_update(self.qpid_parent.unwrap(), new_w_v_parent_v)?;
             }
         }
 
+        Ok(())
+    }
+
+    pub(super) fn send_qpid_update(
+        &mut self,
+        node: NodeId,
+        weight: (u128, u64),
+    ) -> Result<(), WaitingRoomError> {
+        let updated_iteration = self.get_update_iteration(node);
+        self.network_handle.send_message(
+            node,
+            NodeToNodeMessage::QPIDUpdateMessage {
+                weight,
+                updated_iteration,
+            },
+        )?;
+        self.qpid_last_update_values
+            .iter_mut()
+            .find(|(id, _)| *id == node)
+            .map(|(_, value)| {
+                *value = weight;
+            })
+            .unwrap_or_else(|| {
+                self.qpid_last_update_values.push((node, weight));
+            });
         Ok(())
     }
 
@@ -90,16 +106,7 @@ where
                     continue;
                 }
                 let updated_weight = self.qpid_weight_table.compute_weight(node);
-                let updated_iteration = self.get_update_iteration(node);
-                self.network_handle
-                    .send_message(
-                        node,
-                        NodeToNodeMessage::QPIDUpdateMessage {
-                            weight: updated_weight,
-                            updated_iteration,
-                        },
-                    )
-                    .unwrap();
+                self.send_qpid_update(node, updated_weight)?;
             }
         }
 
@@ -124,16 +131,7 @@ where
                 .qpid_weight_table
                 .compute_weight(self.qpid_parent.unwrap());
             if new_w_v_parent_v != old_w_v_parent_v.unwrap() {
-                let updated_iteration = self.get_update_iteration(self.qpid_parent.unwrap());
-                self.network_handle
-                    .send_message(
-                        self.qpid_parent.unwrap(),
-                        NodeToNodeMessage::QPIDUpdateMessage {
-                            weight: new_w_v_parent_v,
-                            updated_iteration,
-                        },
-                    )
-                    .unwrap()
+                self.send_qpid_update(self.qpid_parent.unwrap(), new_w_v_parent_v)?;
             }
         }
 

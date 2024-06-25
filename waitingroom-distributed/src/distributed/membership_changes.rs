@@ -249,22 +249,25 @@ where
             // This happens in the heuristic set below here.
             self.qpid_parent = None;
             // send an update to all neighbours
-            for neighbour in self.qpid_weight_table.all_neighbours() {
-                if neighbour == self.node_id {
-                    continue;
-                }
-                let weight = self.qpid_weight_table.compute_weight(neighbour);
-                let updated_iteration = self.get_update_iteration(neighbour);
-                self.network_handle.send_message(
-                    neighbour,
-                    NodeToNodeMessage::QPIDUpdateMessage {
-                        weight,
-                        updated_iteration,
-                    },
-                )?;
-                // self.qpid_weight_table.remove(neighbour);
-            }
             log::debug!("[{}] Removed neighbours, finding new parent", self.node_id);
+        }
+        for neighbour in self.qpid_weight_table.all_neighbours() {
+            if neighbour == self.node_id {
+                continue;
+            }
+            let weight = self.qpid_weight_table.compute_weight(neighbour);
+
+            if self.qpid_last_update_values.iter().find_map(|x| {
+                if x.0 == neighbour {
+                    Some(x.1)
+                } else {
+                    None
+                }
+            }) != Some(weight)
+            {
+                // We haven't received an update from this neighbour yet, so we'll send one.
+                self.send_qpid_update(neighbour, weight)?;
+            }
         }
         self.spanning_tree = tree;
 
@@ -281,8 +284,8 @@ where
         if self.qpid_parent == Some(neighbour) {
             // We're removing the current parent, so we'll need to send a find root once we know the new parent.
             self.qpid_parent = None;
-            self.should_send_find_root = true;
         }
+        self.should_send_find_root = true;
         // Removing a neighbour is easier than adding one. We just remove its entry from the table.
         self.qpid_weight_table.remove(neighbour);
     }
@@ -291,14 +294,7 @@ where
         log::debug!("[{}] Adding neighbour {}", self.node_id, neighbour);
         // Now, we send an update message to our new neighbour.
         let weight = self.qpid_weight_table.compute_weight(neighbour);
-        let updated_iteration = self.get_update_iteration(neighbour);
-        self.network_handle.send_message(
-            neighbour,
-            NodeToNodeMessage::QPIDUpdateMessage {
-                weight,
-                updated_iteration,
-            },
-        )?;
+        self.send_qpid_update(neighbour, weight)?;
 
         Ok(())
     }

@@ -64,6 +64,8 @@ where
     /// Monotonically increasing counter for the QPID update and FindRoot messages sent to each node.
     /// This is used to determine whether a message is outdated or not.
     qpid_update_iterations: Vec<(NodeId, u64)>,
+    /// The last value sent in a QPID update message to this node.
+    qpid_last_update_values: Vec<(NodeId, Weight)>,
 
     // Also see count.rs
     /// The count parent is the ID of the parent node in the count tree.
@@ -493,6 +495,7 @@ where
             fd_last_check_node: None,
             qpid_parent: None,
             should_send_find_root: false,
+            qpid_last_update_values: vec![],
         }
     }
 
