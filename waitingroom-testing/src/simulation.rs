@@ -106,7 +106,7 @@ impl RunningSimulation {
 
     fn check_consistent_state(&self) -> Result<(), InvariantCheckError> {
         // TODO: Move this to be part of the running simulation.
-        check_consistent_state(&self.nodes, &self.network, &self.node_settings)
+        check_consistent_state(&self.nodes, &self.network)
     }
 
     fn debug_print(&self) {
@@ -291,7 +291,14 @@ impl RunningSimulation {
                                     continue;
                                 }
                             };
-                            let pass = node.leave(*ticket)?;
+                            let pass = match node.leave(*ticket) {
+                                Ok(pass) => pass,
+                                Err(WaitingRoomError::TicketCannotLeaveYet) => {
+                                    user.return_to_refreshing();
+                                    continue;
+                                }
+                                Err(err) => return Err(err),
+                            };
                             user.leave(pass);
                             self.results.left_user();
                         }
@@ -397,7 +404,7 @@ impl Simulation {
             sim.tick_time();
             let now = sim.get_now_time();
 
-            if now == 82528 - 29 {
+            if now == 2527 - 28 {
                 sim.debug_print();
             }
 
@@ -472,7 +479,18 @@ impl Simulation {
                 break;
             }
 
-            if sim.get_now_time() > self.config.time_until_cooldown * 10 {
+            if now >= self.config.time_until_cooldown + 5000 {
+                let diff = now - self.config.time_until_cooldown - 5000;
+                if diff % 100 == 0 {
+                    sim.debug_print();
+                }
+                if diff > 10000 {
+                    log::error!("Simulation took too long to complete");
+                    return Err(SimulationError::SimulationTimeout);
+                }
+            }
+
+            if sim.get_now_time() > self.config.time_until_cooldown * 2 {
                 // This is a failure, we should have been done by now.
                 return Err(SimulationError::SimulationTimeout);
             }

@@ -98,6 +98,16 @@ impl WeightTable {
             .unwrap_or((Time::MAX, 0))
     }
 
+    pub fn compute_weight_allowlist(&self, node_id: NodeId, allowing: Vec<NodeId>) -> Weight {
+        self.table
+            .iter()
+            .filter(|(id, _)| node_id == self.node_id || *id != node_id)
+            .filter(|(id, _)| allowing.contains(id))
+            .map(|(_, entry)| entry.weight)
+            .min()
+            .unwrap_or((Time::MAX, 0))
+    }
+
     pub fn get_smallest(&self) -> Option<NodeId> {
         self.table
             .iter()

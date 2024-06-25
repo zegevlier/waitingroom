@@ -248,6 +248,22 @@ where
             // We've only removed neighbours. We can just recompute the parent.
             // This happens in the heuristic set below here.
             self.qpid_parent = None;
+            // send an update to all neighbours
+            for neighbour in self.qpid_weight_table.all_neighbours() {
+                if neighbour == self.node_id {
+                    continue;
+                }
+                let weight = self.qpid_weight_table.compute_weight(neighbour);
+                let updated_iteration = self.get_update_iteration(neighbour);
+                self.network_handle.send_message(
+                    neighbour,
+                    NodeToNodeMessage::QPIDUpdateMessage {
+                        weight,
+                        updated_iteration,
+                    },
+                )?;
+                // self.qpid_weight_table.remove(neighbour);
+            }
             log::debug!("[{}] Removed neighbours, finding new parent", self.node_id);
         }
         self.spanning_tree = tree;

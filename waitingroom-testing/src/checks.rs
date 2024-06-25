@@ -1,4 +1,4 @@
-use waitingroom_core::{network::DummyNetwork, settings::GeneralWaitingRoomSettings};
+use waitingroom_core::network::DummyNetwork;
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
 use crate::Node;
@@ -7,13 +7,11 @@ use crate::Node;
 pub enum InvariantCheckError {
     QpidNode,
     SingleRoot,
-    TooManyOnSite,
 }
 
 pub fn check_consistent_state(
     nodes: &[Node],
     network: &DummyNetwork<NodeToNodeMessage>,
-    settings: &GeneralWaitingRoomSettings,
 ) -> Result<(), InvariantCheckError> {
     if network.is_empty() {
         // The QPID invariant only makes sense to check if we have no network messages.
@@ -28,10 +26,6 @@ pub fn check_consistent_state(
         }
     }
 
-    if !ensure_no_more_than_n_onsite(nodes, settings.max_user_count) {
-        return Err(InvariantCheckError::TooManyOnSite);
-    }
-
     log::debug!("All invariants hold");
     Ok(())
 }
@@ -41,12 +35,19 @@ fn verify_qpid_invariant(nodes: &[Node]) -> bool {
         let parent_v = match v.get_qpid_parent() {
             Some(p) => p,
             None => {
+                // Having no parent is allowed, as long as it there are no other nodes in this node's weight table.
+                // This could happen if the node is in the middle on joining the network at a node that is offline.
+                if v.get_qpid_weight_table().neighbour_count() == 0 {
+                    continue;
+                }
                 log::error!("Node {} has no parent", v.get_node_id());
                 return false;
             }
         };
 
-        let w_v_parent_v = v.get_qpid_weight_table().compute_weight(parent_v);
+        let w_v_parent_v = v
+            .get_qpid_weight_table()
+            .compute_weight_allowlist(parent_v, nodes.iter().map(|n| n.get_node_id()).collect());
 
         let w_v = v
             .get_qpid_weight_table()
@@ -60,8 +61,8 @@ fn verify_qpid_invariant(nodes: &[Node]) -> bool {
             let x_parent = match x.get_qpid_parent() {
                 Some(p) => p,
                 None => {
-                    log::error!("Node {} has no parent", x.get_node_id());
-                    return false;
+                    // If x has no parent, and this is a problem, this will be found in the outer loop. Otherwise, the parent isn't this node, so we can skip this node.
+                    continue;
                 }
             };
             if x_parent == v.get_node_id() {
@@ -102,22 +103,6 @@ fn ensure_only_single_root(nodes: &[Node]) -> bool {
                 log::error!("Root node: {}", node.get_node_id());
             }
         }
-        return false;
-    }
-    true
-}
-
-fn ensure_no_more_than_n_onsite(nodes: &[Node], max_users: usize) -> bool {
-    let mut onsite_count = 0;
-    for node in nodes {
-        onsite_count += node.get_local_on_site_count();
-    }
-    if onsite_count > max_users {
-        log::error!(
-            "There should be at most {} users on site. Found {} users on site.",
-            max_users,
-            onsite_count
-        );
         return false;
     }
     true

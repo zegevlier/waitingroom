@@ -62,13 +62,13 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
         .chain(std::io::stdout())
         // .chain(file)
         .level_for("waitingroom_core::random", log::LevelFilter::Info)
-        // .level_for("waitingroom_distributed", log::LevelFilter::Warn)
+        .level_for("waitingroom_distributed", log::LevelFilter::Warn)
         .apply()
         .unwrap();
 }
 
 fn main() {
-    let logging_level = LevelFilter::Debug;
+    let logging_level = LevelFilter::Info;
     let time_provider = DummyTimeProvider::new();
 
     initialise_logging(&time_provider, logging_level);
@@ -100,12 +100,12 @@ fn main() {
     };
 
     let simulation = Simulation::new(config);
-    dbg!(simulation.run(23).unwrap());
+    // dbg!(simulation.run(315).unwrap());
 
-    // (0..1000)
-    //     .into_iter()
-    //     .for_each(|seed| match simulation.run(seed) {
-    //         Ok(results) => log::info!("Simulation {} completed successfully: {:?}", seed, results),
-    //         Err(e) => log::error!("Simulation failed: {:?}", e),
-    //     });
+    (0..1000)
+        .into_iter()
+        .for_each(|seed| match simulation.run(seed) {
+            Ok(results) => log::info!("Simulation {} completed successfully: {:?}", seed, results),
+            Err(e) => log::error!("Simulation failed: {:?}", e),
+        });
 }

@@ -183,6 +183,7 @@ where
                     self.settings.ticket_refresh_time,
                     self.settings.ticket_expiry_time,
                     &self.time_provider,
+                    self.node_id,
                 );
                 ticket
             })
@@ -491,7 +492,7 @@ where
             count_parent: None,
             fd_last_check_node: None,
             qpid_parent: None,
-            should_send_find_root: false
+            should_send_find_root: false,
         }
     }
 

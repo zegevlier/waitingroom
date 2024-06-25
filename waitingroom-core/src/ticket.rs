@@ -128,6 +128,7 @@ impl Ticket {
         ticket_refresh_time: Time,
         ticket_expiry_time: Time,
         time_provider: &T,
+        node_id: NodeId,
     ) -> Self
     where
         T: TimeProvider,
@@ -137,9 +138,9 @@ impl Ticket {
         Self {
             identifier: self.identifier,
             join_time: self.join_time,
+            node_id,
             next_refresh_time: now_time + ticket_refresh_time,
             expiry_time: now_time + ticket_expiry_time,
-            node_id: self.node_id,
             previous_position_estimate: position_estimate,
             ticket_type: self.ticket_type,
             eviction_time: self.eviction_time,
