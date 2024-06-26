@@ -103,7 +103,7 @@ fn main() {
     };
 
     let simulation = Simulation::new(config);
-    dbg!(simulation.run(2192).unwrap());
+    dbg!(simulation.run(8).unwrap());
 
     // #[allow(clippy::useless_conversion)]
     // (0..1000)
@@ -147,11 +147,11 @@ fn one_one_test() {
     };
 
     let simulation = Simulation::new(config);
-    (2000..3000)
-        .into_iter()
+    (0..10000)
+        .into_par_iter()
         .for_each(|seed| match simulation.run(seed) {
             Ok(results) => log::info!("Simulation {} completed successfully: {:?}", seed, results),
-            Err(e) => log::error!("Simulation failed: {:?}", e),
+            Err(e) => log::error!("Simulation failed (seed: {}): {:?}", seed, e),
         });
     panic!("done");
 }

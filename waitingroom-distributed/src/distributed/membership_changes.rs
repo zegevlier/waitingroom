@@ -237,6 +237,7 @@ where
                 self.node_id
             );
             self.qpid_parent = None; // We don't know who the parent should be, so we set it to None.
+            self.should_send_find_root = true;
         } else if any_added {
             // We've only added neighbours. We need to wait for the updates from the new neighbours.
             log::debug!(

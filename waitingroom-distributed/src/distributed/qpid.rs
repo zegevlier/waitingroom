@@ -105,8 +105,21 @@ where
                 if node == self.qpid_parent.unwrap() || node == self.node_id {
                     continue;
                 }
-                let updated_weight = self.qpid_weight_table.compute_weight(node);
-                self.send_qpid_update(node, updated_weight)?;
+                let should_send_update = match self
+                    .qpid_last_update_values
+                    .iter()
+                    .find(|(id, _)| *id == node)
+                {
+                    None => true,
+                    Some((_, value)) => {
+                        let current_weight = self.qpid_weight_table.get_weight(node).unwrap();
+                        current_weight != *value
+                    }
+                };
+                if should_send_update {
+                    let updated_weight = self.qpid_weight_table.compute_weight(node);
+                    self.send_qpid_update(node, updated_weight)?;
+                }
             }
         }
 
