@@ -105,21 +105,8 @@ where
                 if node == self.qpid_parent.unwrap() || node == self.node_id {
                     continue;
                 }
-                let should_send_update = match self
-                    .qpid_last_update_values
-                    .iter()
-                    .find(|(id, _)| *id == node)
-                {
-                    None => true,
-                    Some((_, value)) => {
-                        let current_weight = self.qpid_weight_table.get_weight(node).unwrap();
-                        current_weight != *value
-                    }
-                };
-                if should_send_update {
-                    let updated_weight = self.qpid_weight_table.compute_weight(node);
-                    self.send_qpid_update(node, updated_weight)?;
-                }
+                let updated_weight = self.qpid_weight_table.compute_weight(node);
+                self.send_qpid_update(node, updated_weight)?;
             }
         }
 
@@ -203,6 +190,9 @@ where
                     )
                     .unwrap();
             }
+        } else {
+            // If our neighbours are all set to max, we need to point at the lowest value in the spanning tree, this will be our new parent.
+            // self.qpid_parent = Some(self.spanning_tree.towards_lowest_id(self.node_id));
         }
 
         match ticket.ticket_type {
@@ -246,7 +236,22 @@ where
 
         self.qpid_weight_table
             .set(from_node, weight, updated_iteration);
-        self.qpid_parent = self.qpid_weight_table.get_smallest();
+
+        if self.qpid_weight_table.any_not_max() {
+            log::debug!(
+                "[NODE {}] Initializing QPID with values from weight table in findRoot",
+                self.node_id
+            );
+            self.qpid_parent = Some(self.qpid_weight_table.get_smallest().unwrap());
+        } else {
+            log::debug!(
+                "[NODE {}] Initializing QPID with values from spanning tree in findRoot",
+                self.node_id
+            );
+            // Otherwise, the value that will lead us to the lowest node ID is our parent.
+            self.qpid_parent = Some(self.spanning_tree.towards_lowest_id(self.node_id));
+        }
+
         if self.qpid_parent.unwrap() != self.node_id {
             let w_v_parent_v = self
                 .qpid_weight_table
