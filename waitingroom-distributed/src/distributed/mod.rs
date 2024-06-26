@@ -508,7 +508,7 @@ where
     ) {
         self.qpid_parent = parent;
         self.qpid_weight_table = WeightTable::from_vec(self.node_id, weight_table);
-        self.network_members = self.qpid_weight_table.all_neighbours();
+        self.network_members = self.qpid_weight_table.get_all_neighbours();
     }
 
     /// Add a ticket to the local queue, incrementing the metric if the ticket type is normal.

@@ -101,7 +101,7 @@ where
             );
 
             // If we found our parent here, we need to send some more updates, since we didn't have the most up to date info before.
-            for node in self.qpid_weight_table.all_neighbours() {
+            for node in self.qpid_weight_table.get_all_neighbours() {
                 if node == self.qpid_parent.unwrap() || node == self.node_id {
                     continue;
                 }

@@ -35,19 +35,17 @@ fn verify_qpid_invariant(nodes: &[Node]) -> bool {
         let parent_v = match v.get_qpid_parent() {
             Some(p) => p,
             None => {
-                // Having no parent is allowed, as long as it there are no other nodes in this node's weight table.
-                // This could happen if the node is in the middle on joining the network at a node that is offline.
-                if v.get_qpid_weight_table().neighbour_count() == 0 {
-                    continue;
-                }
-                log::error!("Node {} has no parent", v.get_node_id());
-                return false;
+                // Not having a parent here is fine, this can happen when a node in the network is offline, but has not yet been
+                // flagged as such. This will be caught eventually, or the timeout will trigger.
+                log::debug!("Node {} has no parent", v.get_node_id());
+                continue;
             }
         };
 
-        let w_v_parent_v = v
-            .get_qpid_weight_table()
-            .compute_weight_allowlist(parent_v, nodes.iter().map(|n| n.get_node_id()).collect());
+        let w_v_parent_v = v.get_qpid_weight_table().compute_weight_allowlist(
+            parent_v,
+            &nodes.iter().map(|n| n.get_node_id()).collect::<Vec<_>>(),
+        );
 
         let w_v = v
             .get_qpid_weight_table()

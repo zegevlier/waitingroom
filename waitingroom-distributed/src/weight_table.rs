@@ -13,6 +13,7 @@ pub struct WeightTable {
     table: Vec<(NodeId, Entry)>,
     /// The ID of the node that this weight table belongs to
     node_id: NodeId,
+    true_neighbours: Vec<NodeId>,
 }
 
 impl WeightTable {
@@ -20,6 +21,7 @@ impl WeightTable {
         WeightTable {
             table: vec![],
             node_id,
+            true_neighbours: vec![node_id],
         }
     }
 
@@ -38,6 +40,7 @@ impl WeightTable {
                 })
                 .collect(),
             node_id,
+            true_neighbours: table.iter().map(|(i, _)| *i).collect(),
         }
     }
 
@@ -90,15 +93,10 @@ impl WeightTable {
     }
 
     pub fn compute_weight(&self, node_id: NodeId) -> Weight {
-        self.table
-            .iter()
-            .filter(|(id, _)| node_id == self.node_id || *id != node_id)
-            .map(|(_, entry)| entry.weight)
-            .min()
-            .unwrap_or((Time::MAX, 0))
+        self.compute_weight_allowlist(node_id, &self.true_neighbours)
     }
 
-    pub fn compute_weight_allowlist(&self, node_id: NodeId, allowing: Vec<NodeId>) -> Weight {
+    pub fn compute_weight_allowlist(&self, node_id: NodeId, allowing: &[NodeId]) -> Weight {
         self.table
             .iter()
             .filter(|(id, _)| node_id == self.node_id || *id != node_id)
@@ -111,6 +109,7 @@ impl WeightTable {
     pub fn get_smallest(&self) -> Option<NodeId> {
         self.table
             .iter()
+            .filter(|(id, _)| self.true_neighbours.contains(id))
             .map(|(id, entry)| (*id, entry.weight))
             .min_by_key(|(_, time)| *time)
             .map(|(id, _)| id)
@@ -119,6 +118,7 @@ impl WeightTable {
     pub fn any_not_max(&self) -> bool {
         self.table
             .iter()
+            .filter(|(id, _)| self.true_neighbours.contains(id))
             .any(|(_, entry)| entry.weight.0 != Time::MAX)
     }
 
@@ -126,7 +126,7 @@ impl WeightTable {
         self.table.len() - 1 // We don't count ourselves, but we are in the table
     }
 
-    pub fn all_neighbours(&self) -> Vec<NodeId> {
+    pub fn get_all_neighbours(&self) -> Vec<NodeId> {
         self.table.iter().map(|(id, _)| *id).collect()
     }
 
@@ -135,5 +135,14 @@ impl WeightTable {
             .iter()
             .map(|(id, entry)| (*id, entry.weight))
             .collect()
+    }
+
+    pub fn set_true_neighbours(&mut self, true_neighbours: Vec<NodeId>) {
+        self.true_neighbours = true_neighbours;
+        self.true_neighbours.push(self.node_id);
+    }
+
+    pub fn get_true_neighbours(&self) -> Vec<NodeId> {
+        self.true_neighbours.clone()
     }
 }

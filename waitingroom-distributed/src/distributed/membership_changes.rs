@@ -215,16 +215,16 @@ where
             }
         }
 
-        for neighbour in new_neighbours {
-            if !old_neighbours.contains(&neighbour) {
+        for neighbour in new_neighbours.iter() {
+            if !old_neighbours.contains(neighbour) {
                 // We have a neighbour in the new tree that is not in the old tree.
                 // We need to add this neighbour.
 
                 // If the neighbour is already in the weight table, some messages got reordered, but that's fine.
                 // We still add them, so they get an update if they need it. We don't count them though, since
                 // nothing on our side changed.
-                self.add_neighbour(neighbour)?;
-                if self.qpid_weight_table.get_weight(neighbour).is_none() {
+                self.add_neighbour(*neighbour)?;
+                if self.qpid_weight_table.get_weight(*neighbour).is_none() {
                     any_added = true;
                 }
             }
@@ -248,10 +248,11 @@ where
             // We've only removed neighbours. We can just recompute the parent.
             // This happens in the heuristic set below here.
             self.qpid_parent = None;
+            self.should_send_find_root = true;
             // send an update to all neighbours
             log::debug!("[{}] Removed neighbours, finding new parent", self.node_id);
         }
-        for neighbour in self.qpid_weight_table.all_neighbours() {
+        for neighbour in new_neighbours.iter().copied() {
             if neighbour == self.node_id {
                 continue;
             }
@@ -269,6 +270,8 @@ where
                 self.send_qpid_update(neighbour, weight)?;
             }
         }
+        self.qpid_weight_table.set_true_neighbours(new_neighbours);
+
         self.spanning_tree = tree;
 
         // We'll see if we have all the information we need to set a new QPID parent. If we do, we'll set it.
@@ -281,11 +284,6 @@ where
 
     fn remove_neighbour(&mut self, neighbour: NodeId) {
         log::debug!("[{}] Removing neighbour {}", self.node_id, neighbour);
-        if self.qpid_parent == Some(neighbour) {
-            // We're removing the current parent, so we'll need to send a find root once we know the new parent.
-            self.qpid_parent = None;
-        }
-        self.should_send_find_root = true;
         // Removing a neighbour is easier than adding one. We just remove its entry from the table.
         self.qpid_weight_table.remove(neighbour);
     }

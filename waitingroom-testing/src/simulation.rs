@@ -122,6 +122,10 @@ impl RunningSimulation {
                 node.get_node_id(),
                 node.get_qpid_parent()
             );
+            log::debug!(
+                "True neighbours: {:?}",
+                node.get_qpid_weight_table().get_true_neighbours()
+            );
             log::debug!("Weight table:");
             log::debug!("Neighbour\t\tWeight");
             for (neighbour, weight) in node.get_qpid_weight_table().all_weights() {
@@ -327,7 +331,7 @@ impl RunningSimulation {
                 .disturbance_random_provider()
                 .random_u64() as usize
                 % self.nodes.len();
-            log::info!("Killing node {}", node_index);
+            log::debug!("Killing node {}", node_index);
             self.network
                 .remove_node(self.nodes[node_index].get_node_id());
             self.nodes.remove(node_index);
@@ -404,7 +408,7 @@ impl Simulation {
             sim.tick_time();
             let now = sim.get_now_time();
 
-            if now == 2527 - 28 {
+            if now == 47545 - 46 {
                 sim.debug_print();
             }
 
@@ -484,15 +488,10 @@ impl Simulation {
                 if diff % 100 == 0 {
                     sim.debug_print();
                 }
-                if diff > 10000 {
+                if diff > self.config.time_until_cooldown * 10 {
                     log::error!("Simulation took too long to complete");
                     return Err(SimulationError::SimulationTimeout);
                 }
-            }
-
-            if sim.get_now_time() > self.config.time_until_cooldown * 2 {
-                // This is a failure, we should have been done by now.
-                return Err(SimulationError::SimulationTimeout);
             }
         }
 

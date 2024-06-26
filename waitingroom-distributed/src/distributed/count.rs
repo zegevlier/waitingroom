@@ -41,7 +41,7 @@ where
 
         // If we have any neighbours, we need to ask them to participate in the count before we can respond.
         if self.qpid_weight_table.neighbour_count() > 1 || self.node_id == from_node {
-            for node_id in &self.qpid_weight_table.all_neighbours() {
+            for node_id in &self.qpid_weight_table.get_all_neighbours() {
                 if *node_id != from_node && *node_id != self.node_id {
                     self.network_handle
                         .send_message(*node_id, NodeToNodeMessage::CountRequest(count_iteration))?;
@@ -100,7 +100,7 @@ where
         if self.count_responses.len()
             == self
                 .qpid_weight_table
-                .all_neighbours()
+                .get_all_neighbours()
                 .iter()
                 .filter(|n| **n != self.count_parent.unwrap() && **n != self.node_id)
                 .count()

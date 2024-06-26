@@ -36,7 +36,7 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
     //     .unwrap();
 
     let time_provider_fern = time_provider.clone();
-    fern::Dispatch::new()
+    let mut dis = fern::Dispatch::new()
         .format(move |out, message, record| {
             let start_length = record.target().len();
             let max_len = 30;
@@ -61,13 +61,60 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
         .level(logging_level)
         .chain(std::io::stdout())
         // .chain(file)
-        .level_for("waitingroom_core::random", log::LevelFilter::Info)
-        .level_for("waitingroom_distributed", log::LevelFilter::Warn)
-        .apply()
-        .unwrap();
+        .level_for("waitingroom_core::random", log::LevelFilter::Info);
+
+    if logging_level != LevelFilter::Debug {
+        dis = dis.level_for("waitingroom_distributed", log::LevelFilter::Warn);
+    }
+    dis.apply().unwrap();
 }
 
 fn main() {
+    // one_one_test();
+    let logging_level = LevelFilter::Debug;
+    let time_provider = DummyTimeProvider::new();
+
+    initialise_logging(&time_provider, logging_level);
+
+    let config = SimulationConfig {
+        settings: GeneralWaitingRoomSettings {
+            min_user_count: 20,
+            max_user_count: 25,
+            ticket_refresh_time: 600,
+            ticket_expiry_time: 2000,
+            pass_expiry_time: 0,
+            fault_detection_period: 500,
+            fault_detection_timeout: 200,
+            fault_detection_interval: 100,
+            eviction_interval: 1000,
+            cleanup_interval: 1000,
+        },
+        initial_node_count: 8,
+        latency: LatencySetting::UniformRandom(10, 20),
+        total_user_count: 500,
+        nodes_added_count: 1,
+        nodes_killed_count: 1,
+        check_consistency: true,
+        time_until_cooldown: 100000,
+        user_behaviour: UserBehaviour {
+            abandon_odds: 1000,
+            pass_refresh_odds: 1000,
+        },
+    };
+
+    let simulation = Simulation::new(config);
+    dbg!(simulation.run(2192).unwrap());
+
+    // #[allow(clippy::useless_conversion)]
+    // (0..1000)
+    //     .into_iter()
+    //     .for_each(|seed| match simulation.run(seed) {
+    //         Ok(results) => log::info!("Simulation {} completed successfully: {:?}", seed, results),
+    //         Err(e) => log::error!("Simulation failed: {:?}", e),
+    //     });
+}
+
+fn one_one_test() {
     let logging_level = LevelFilter::Info;
     let time_provider = DummyTimeProvider::new();
 
@@ -100,12 +147,11 @@ fn main() {
     };
 
     let simulation = Simulation::new(config);
-    // dbg!(simulation.run(315).unwrap());
-
-    (0..1000)
+    (2000..3000)
         .into_iter()
         .for_each(|seed| match simulation.run(seed) {
             Ok(results) => log::info!("Simulation {} completed successfully: {:?}", seed, results),
             Err(e) => log::error!("Simulation failed: {:?}", e),
         });
+    panic!("done");
 }
