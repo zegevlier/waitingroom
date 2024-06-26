@@ -1,6 +1,49 @@
-use waitingroom_core::{time::Time, NodeId};
+use waitingroom_core::{ticket::TicketIdentifier, time::Time, NodeId};
 
-pub type Weight = (Time, u64);
+#[derive(Debug, Clone, Copy)]
+pub struct Weight {
+    join_time: Time,
+    ticket_id: TicketIdentifier,
+    node_id: NodeId,
+}
+
+impl Weight {
+    pub fn new(join_time: Time, ticket_id: TicketIdentifier, node_id: NodeId) -> Self {
+        Weight {
+            join_time,
+            ticket_id,
+            node_id,
+        }
+    }
+
+    pub fn is_max(&self) -> bool {
+        self.join_time == Time::MAX
+    }
+}
+
+impl PartialEq for Weight {
+    fn eq(&self, other: &Self) -> bool {
+        self.join_time == other.join_time && self.ticket_id == other.ticket_id
+    }
+}
+
+impl Eq for Weight {}
+
+impl PartialOrd for Weight {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Weight {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // We first compare on join time, then on ticket id, and finally on node id
+        self.join_time
+            .cmp(&other.join_time)
+            .then_with(|| self.ticket_id.cmp(&other.ticket_id))
+            .then_with(|| self.node_id.cmp(&other.node_id))
+    }
+}
 
 #[derive(Debug, Clone)]
 struct Entry {
@@ -103,7 +146,7 @@ impl WeightTable {
             .filter(|(id, _)| allowing.contains(id))
             .map(|(_, entry)| entry.weight)
             .min()
-            .unwrap_or((Time::MAX, 0))
+            .unwrap_or(Weight::new(Time::MAX, 0, self.node_id))
     }
 
     pub fn get_smallest(&self) -> Option<NodeId> {
@@ -119,11 +162,15 @@ impl WeightTable {
         self.table
             .iter()
             .filter(|(id, _)| self.true_neighbours.contains(id))
-            .any(|(_, entry)| entry.weight.0 != Time::MAX)
+            .any(|(_, entry)| !entry.weight.is_max())
     }
 
     pub fn neighbour_count(&self) -> usize {
-        self.table.len() - 1 // We don't count ourselves, but we are in the table
+        self.table
+            .iter()
+            .filter(|(n, _)| self.true_neighbours.contains(n))
+            .count()
+            - 1 // We don't count ourselves, but we are in the table
     }
 
     pub fn get_all_neighbours(&self) -> Vec<NodeId> {

@@ -523,10 +523,9 @@ where
         }
         // We only call QPID insert if the current join time is less than the current QPID weight.
         // This means that all inserts that are *not* at the front of the queue don't make any QPID messages, which is nice.
-        if (ticket.join_time, ticket.identifier)
-            < self.qpid_weight_table.get_weight(self.node_id).unwrap()
-        {
-            self.qpid_insert((ticket.join_time, ticket.identifier))?;
+        let new_weight = Weight::new(ticket.join_time, ticket.identifier, self.node_id);
+        if new_weight < self.qpid_weight_table.get_weight(self.node_id).unwrap() {
+            self.qpid_insert(new_weight)?;
         }
         Ok(())
     }

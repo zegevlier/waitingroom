@@ -6,7 +6,7 @@ use waitingroom_core::{
 };
 use waitingroom_spanning_trees::SpanningTree;
 
-use crate::{messages::NodeToNodeMessage, DistributedWaitingRoom};
+use crate::{messages::NodeToNodeMessage, weight_table::Weight, DistributedWaitingRoom};
 
 impl<T, R, N> DistributedWaitingRoom<T, R, N>
 where
@@ -19,7 +19,8 @@ where
         if at == self.node_id {
             self.initialise_alone()
         } else {
-            self.qpid_weight_table.set(self.node_id, (Time::MAX, 0), 0);
+            self.qpid_weight_table
+                .set(self.node_id, Weight::new(Time::MAX, 0, self.node_id), 0);
             self.network_handle
                 .send_message(at, NodeToNodeMessage::NodeJoin(self.node_id))?;
             Ok(())
@@ -39,7 +40,8 @@ where
         log::debug!("[{}] Initialising alone", self.node_id);
         self.tree_iteration += 1;
         self.qpid_parent = Some(self.node_id);
-        self.qpid_weight_table.set(self.node_id, (Time::MAX, 0), 0);
+        self.qpid_weight_table
+            .set(self.node_id, Weight::new(Time::MAX, 0, self.node_id), 0);
         Ok(())
     }
 

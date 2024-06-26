@@ -47,7 +47,7 @@ where
     pub(super) fn send_qpid_update(
         &mut self,
         node: NodeId,
-        weight: (u128, u64),
+        weight: Weight,
     ) -> Result<(), WaitingRoomError> {
         let updated_iteration = self.get_update_iteration(node);
         self.network_handle.send_message(
@@ -167,12 +167,16 @@ where
             Some(next_ticket) => {
                 self.qpid_weight_table.set(
                     self.node_id,
-                    (next_ticket.join_time, next_ticket.identifier),
+                    Weight::new(next_ticket.join_time, next_ticket.identifier, self.node_id),
                     0,
                 );
             }
             None => {
-                self.qpid_weight_table.set(self.node_id, (Time::MAX, 0), 0);
+                self.qpid_weight_table.set(
+                    self.node_id,
+                    Weight::new(Time::MAX, 0, self.node_id),
+                    0,
+                );
             }
         }
 

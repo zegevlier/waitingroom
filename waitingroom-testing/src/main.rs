@@ -70,7 +70,7 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
 }
 
 fn main() {
-    // one_one_test();
+    one_one_test();
     let logging_level = LevelFilter::Debug;
     let time_provider = DummyTimeProvider::new();
 
@@ -103,7 +103,7 @@ fn main() {
     };
 
     let simulation = Simulation::new(config);
-    dbg!(simulation.run(7777).unwrap());
+    dbg!(simulation.run(621).unwrap());
 
     // #[allow(clippy::useless_conversion)]
     // (0..1000)

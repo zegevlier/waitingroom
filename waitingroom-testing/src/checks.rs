@@ -31,6 +31,7 @@ pub fn check_consistent_state(
 }
 
 fn verify_qpid_invariant(nodes: &[Node]) -> bool {
+    let existing_node_ids = &nodes.iter().map(|n| n.get_node_id()).collect::<Vec<_>>();
     for v in nodes.iter() {
         let parent_v = match v.get_qpid_parent() {
             Some(p) => p,
@@ -42,9 +43,15 @@ fn verify_qpid_invariant(nodes: &[Node]) -> bool {
             }
         };
 
+        let true_neighbours = v.get_qpid_weight_table().get_true_neighbours();
+
         let w_v_parent_v = v.get_qpid_weight_table().compute_weight_allowlist(
             parent_v,
-            &nodes.iter().map(|n| n.get_node_id()).collect::<Vec<_>>(),
+            &existing_node_ids
+                .iter()
+                .filter(|n| true_neighbours.contains(n))
+                .copied()
+                .collect::<Vec<_>>(),
         );
 
         let w_v = v

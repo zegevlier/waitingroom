@@ -7,7 +7,8 @@ use waitingroom_core::{
     time::{DummyTimeProvider, Time},
     WaitingRoomMessageTriggered, WaitingRoomUserTriggered,
 };
-use waitingroom_distributed::{messages::NodeToNodeMessage, DistributedWaitingRoom};
+
+use waitingroom_distributed::{messages::NodeToNodeMessage, DistributedWaitingRoom, Weight};
 
 type Node = DistributedWaitingRoom<
     DummyTimeProvider,
@@ -60,7 +61,7 @@ fn main() {
             Some(*parent),
             neighbour_config
                 .iter()
-                .map(|v| (*v, (Time::MAX, 0)))
+                .map(|v| (*v, Weight::new(Time::MAX, 0, 0)))
                 .collect(),
         );
         nodes.push(node);
