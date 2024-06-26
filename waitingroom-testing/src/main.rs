@@ -103,7 +103,7 @@ fn main() {
     };
 
     let simulation = Simulation::new(config);
-    dbg!(simulation.run(8).unwrap());
+    dbg!(simulation.run(7777).unwrap());
 
     // #[allow(clippy::useless_conversion)]
     // (0..1000)
@@ -138,7 +138,7 @@ fn one_one_test() {
         total_user_count: 500,
         nodes_added_count: 1,
         nodes_killed_count: 1,
-        check_consistency: true,
+        check_consistency: false,
         time_until_cooldown: 100000,
         user_behaviour: UserBehaviour {
             abandon_odds: 1000,

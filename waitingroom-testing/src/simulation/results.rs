@@ -63,7 +63,7 @@ impl SimulationResultsBuilder {
 
     /// Build the simulation results.
     /// The kendall_tau parameter is the normalised kendall tau distance between the actual order of users leaving the waiting room and the expected order.
-    pub fn build(self, kendall_tau: f64, time_taken: Time) -> SimulationResults {
+    pub fn build(&self, kendall_tau: f64, time_taken: Time) -> SimulationResults {
         SimulationResults {
             total_users_added: self.total_users_added,
             total_users_left: self.total_users_left,

@@ -157,9 +157,21 @@ impl RunningSimulation {
 
         let normalised_kendall_tau = kendall_tau::normalised_kendall_tau(&x, &y);
 
-        Ok(self
+        let built_results = self
             .results
-            .build(normalised_kendall_tau, self.time_provider.get_now_time()))
+            .build(normalised_kendall_tau, self.time_provider.get_now_time());
+
+        if built_results.total_users_added != built_results.total_users_left {
+            log::error!(
+                "Total users added ({}) does not match total users left ({})",
+                built_results.total_users_added,
+                built_results.total_users_left
+            );
+            self.debug_print();
+            return Err(SimulationError::NotAllUsersLeft);
+        }
+
+        Ok(built_results)
     }
 
     fn process_messages(&mut self) -> Result<(), WaitingRoomError> {
@@ -369,6 +381,7 @@ pub enum SimulationError {
     WaitingRoom(WaitingRoomError),
     InvariantCheck(InvariantCheckError),
     SimulationTimeout,
+    NotAllUsersLeft,
 }
 
 impl Simulation {
@@ -408,7 +421,7 @@ impl Simulation {
             sim.tick_time();
             let now = sim.get_now_time();
 
-            if now == 47545 - 46 {
+            if now == 49535 - 36 {
                 sim.debug_print();
             }
 
@@ -459,6 +472,7 @@ impl Simulation {
 
             // Kill nodes
             while !node_kill_timestamps.is_empty() && node_kill_timestamps[0] <= now {
+                sim.debug_print();
                 node_kill_timestamps.remove(0);
                 sim.kill_node();
             }

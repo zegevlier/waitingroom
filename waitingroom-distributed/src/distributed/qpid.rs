@@ -37,6 +37,8 @@ where
             if new_w_v_parent_v != old_w_v_parent_v {
                 self.send_qpid_update(self.qpid_parent.unwrap(), new_w_v_parent_v)?;
             }
+        } else {
+            self.broadcast_latest_values()?;
         }
 
         Ok(())
@@ -190,10 +192,9 @@ where
                         },
                     )
                     .unwrap();
+            } else {
+                self.broadcast_latest_values()?;
             }
-        } else {
-            // If our neighbours are all set to max, we need to point at the lowest value in the spanning tree, this will be our new parent.
-            // self.qpid_parent = Some(self.spanning_tree.towards_lowest_id(self.node_id));
         }
 
         match ticket.ticket_type {
@@ -215,6 +216,30 @@ where
             }
         }
 
+        Ok(())
+    }
+
+    fn broadcast_latest_values(&mut self) -> Result<(), WaitingRoomError> {
+        for node in self.qpid_weight_table.get_true_neighbours() {
+            if node == self.node_id {
+                continue;
+            }
+
+            let weight = self.qpid_weight_table.compute_weight(node);
+
+            // If we've already sent the latest update, we don't need to do that here
+            if let Some((_, last_update)) = self
+                .qpid_last_update_values
+                .iter()
+                .find(|(id, _)| *id == node)
+            {
+                if last_update == &weight {
+                    continue;
+                }
+            }
+
+            self.send_qpid_update(node, weight)?;
+        }
         Ok(())
     }
 
