@@ -143,7 +143,8 @@ where
     pub(super) fn qpid_delete_min(&mut self) -> Result<(), WaitingRoomError> {
         log::info!("[NODE {}] QPID delete min", self.node_id);
         if self.qpid_parent.is_none() {
-            return Err(WaitingRoomError::QPIDNotInitialized);
+            log::warn!("QPID not initialized");
+            return Ok(());
         }
 
         if self.qpid_parent.unwrap() != self.node_id {
