@@ -142,7 +142,7 @@ where
         Ok(())
     }
 
-    fn restructure_tree(&mut self) -> Result<(), WaitingRoomError> {
+    pub(super) fn restructure_tree(&mut self) -> Result<(), WaitingRoomError> {
         let new_tree = SpanningTree::from_member_list(self.network_members.clone());
         self.tree_iteration += 1;
 

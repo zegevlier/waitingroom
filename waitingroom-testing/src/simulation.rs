@@ -421,7 +421,11 @@ impl Simulation {
             sim.tick_time();
             let now = sim.get_now_time();
 
-            if now == 49535 - 36 {
+            if now == 61847 - 38 {
+                sim.debug_print();
+            }
+
+            if now == 61847 - 380 {
                 sim.debug_print();
             }
 

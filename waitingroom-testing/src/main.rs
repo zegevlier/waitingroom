@@ -94,7 +94,7 @@ fn main() {
         total_user_count: 500,
         nodes_added_count: 1,
         nodes_killed_count: 1,
-        check_consistency: true,
+        check_consistency: false,
         time_until_cooldown: 100000,
         user_behaviour: UserBehaviour {
             abandon_odds: 1000,
@@ -103,7 +103,7 @@ fn main() {
     };
 
     let simulation = Simulation::new(config);
-    dbg!(simulation.run(621).unwrap());
+    dbg!(simulation.run(5961).unwrap());
 
     // #[allow(clippy::useless_conversion)]
     // (0..1000)
@@ -136,8 +136,8 @@ fn one_one_test() {
         initial_node_count: 8,
         latency: LatencySetting::UniformRandom(10, 20),
         total_user_count: 500,
-        nodes_added_count: 1,
-        nodes_killed_count: 1,
+        nodes_added_count: 5,
+        nodes_killed_count: 5,
         check_consistency: false,
         time_until_cooldown: 100000,
         user_behaviour: UserBehaviour {
@@ -147,7 +147,7 @@ fn one_one_test() {
     };
 
     let simulation = Simulation::new(config);
-    (0..10000)
+    (0..100000)
         .into_par_iter()
         .for_each(|seed| match simulation.run(seed) {
             Ok(results) => log::info!("Simulation {} completed successfully: {:?}", seed, results),

@@ -75,6 +75,8 @@ where
     count_iteration: Time,
     /// The count responses are used to store the responses from the neighbours in the count tree. They are aggregated sent to the parent when all responses are received.
     count_responses: Vec<(NodeId, usize, usize)>,
+    /// The number of failed counts in a row. If this number is too high, the tree is restructured.
+    failed_counts: usize,
 
     /// This list includes all members of the network, also the ones that are not neighbours in the QPID network.
     network_members: Vec<NodeId>,
@@ -496,6 +498,7 @@ where
             qpid_parent: None,
             should_send_find_root: false,
             qpid_last_update_values: vec![],
+            failed_counts: 0,
         }
     }
 

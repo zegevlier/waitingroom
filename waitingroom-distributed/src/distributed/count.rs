@@ -32,7 +32,15 @@ where
                 count_iteration,
                 self.count_iteration
             );
-            return Ok(());
+
+            // This means that two counts have collided, which probably means we have two roots.
+            self.failed_counts += 1;
+
+            if self.failed_counts > 10 {
+                // We've failed to respond to a count request too many times.
+                // We need to restructure the tree.
+                self.restructure_tree()?;
+            }
         }
 
         self.count_iteration = count_iteration;
@@ -105,6 +113,7 @@ where
                 .filter(|n| **n != self.count_parent.unwrap() && **n != self.node_id)
                 .count()
         {
+            self.failed_counts = 0;
             // We have received all responses.
             let others_queue_count = self
                 .count_responses
@@ -129,10 +138,7 @@ where
                     total_queue_count,
                     total_on_site_count,
                 );
-                self.ensure_correct_site_count(
-                    total_queue_count,
-                    total_on_site_count,
-                )?;
+                self.ensure_correct_site_count(total_queue_count, total_on_site_count)?;
             } else {
                 // We are not the count parent node, so we need to send our total count to the parent node.
                 self.network_handle.send_message(
