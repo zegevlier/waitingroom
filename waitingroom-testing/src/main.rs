@@ -70,15 +70,15 @@ fn initialise_logging(time_provider: &DummyTimeProvider, logging_level: LevelFil
 }
 
 fn main() {
-    one_one_test();
-    let logging_level = LevelFilter::Debug;
+    // one_one_test();
+    let logging_level = LevelFilter::Info;
     let time_provider = DummyTimeProvider::new();
 
     initialise_logging(&time_provider, logging_level);
 
     let config = SimulationConfig {
         settings: GeneralWaitingRoomSettings {
-            target_user_count: 20,
+            target_user_count: 200,
             ticket_refresh_time: 600,
             ticket_expiry_time: 2000,
             pass_expiry_time: 0,
@@ -89,8 +89,8 @@ fn main() {
             cleanup_interval: 1000,
         },
         initial_node_count: 8,
-        latency: LatencySetting::UniformRandom(10, 20),
-        total_user_count: 500,
+        latency: LatencySetting::UniformRandom(5, 10),
+        total_user_count: 100,
         nodes_added_count: 1,
         nodes_killed_count: 1,
         check_consistency: false,
@@ -102,7 +102,7 @@ fn main() {
     };
 
     let simulation = Simulation::new(config);
-    dbg!(simulation.run(5961).unwrap());
+    dbg!(simulation.run(1).unwrap());
 
     // #[allow(clippy::useless_conversion)]
     // (0..1000)

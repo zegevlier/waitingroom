@@ -506,7 +506,7 @@ impl Simulation {
                 if diff % 100 == 0 {
                     sim.debug_print();
                 }
-                if diff > self.config.time_until_cooldown / 2 {
+                if diff > self.config.time_until_cooldown * 10 {
                     log::error!("Simulation took too long to complete");
                     return Err(SimulationError::SimulationTimeout);
                 }
