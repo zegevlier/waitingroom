@@ -32,7 +32,15 @@ where
                 count_iteration,
                 self.count_iteration
             );
-            return Ok(());
+
+            // This means that two counts have collided, which probably means we have two roots.
+            self.failed_counts += 1;
+
+            if self.failed_counts > 10 {
+                // We've failed to respond to a count request too many times.
+                // We need to restructure the tree.
+                self.restructure_tree()?;
+            }
         }
 
         self.count_iteration = count_iteration;
@@ -41,7 +49,7 @@ where
 
         // If we have any neighbours, we need to ask them to participate in the count before we can respond.
         if self.qpid_weight_table.neighbour_count() > 1 || self.node_id == from_node {
-            for node_id in &self.qpid_weight_table.all_neighbours() {
+            for node_id in &self.qpid_weight_table.get_true_neighbours() {
                 if *node_id != from_node && *node_id != self.node_id {
                     self.network_handle
                         .send_message(*node_id, NodeToNodeMessage::CountRequest(count_iteration))?;
@@ -100,11 +108,12 @@ where
         if self.count_responses.len()
             == self
                 .qpid_weight_table
-                .all_neighbours()
+                .get_true_neighbours()
                 .iter()
                 .filter(|n| **n != self.count_parent.unwrap() && **n != self.node_id)
                 .count()
         {
+            self.failed_counts = 0;
             // We have received all responses.
             let others_queue_count = self
                 .count_responses
@@ -129,10 +138,7 @@ where
                     total_queue_count,
                     total_on_site_count,
                 );
-                self.ensure_correct_site_count(
-                    total_queue_count,
-                    total_on_site_count,
-                )?;
+                self.ensure_correct_site_count(total_queue_count, total_on_site_count)?;
             } else {
                 // We are not the count parent node, so we need to send our total count to the parent node.
                 self.network_handle.send_message(
@@ -156,5 +162,9 @@ where
 
     pub fn in_queue_count(&self) -> usize {
         self.local_queue.len()
+    }
+
+    pub fn in_queue_leaving_count(&self) -> usize {
+        self.local_queue_leaving_list.len()
     }
 }

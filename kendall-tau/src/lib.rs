@@ -1,9 +1,10 @@
 /// Calculate the Kendall tau distance between two slices.
 /// This function is a direct implementation of the code found in the [Wikipedia article](https://en.wikipedia.org/wiki/Kendall_tau_distance).
 /// The Kendall tau distance is a metric that counts the number of pairwise disagreements between two rankings.
-pub fn kendall_tau<T>(x: &[T], y: &[T]) -> usize
+pub fn kendall_tau<T, K>(x: &[T], y: &[K]) -> usize
 where
     T: Ord,
+    K: Ord,
 {
     assert_eq!(x.len(), y.len(), "Input slices must have the same length");
     let mut distance = 0;
@@ -24,9 +25,10 @@ where
 
 /// Calculate the normalised Kendall tau distance between two slices.
 /// The normalised Kendall tau distance is the Kendall tau distance divided by the maximum possible distance.
-pub fn normalised_kendall_tau<T>(x: &[T], y: &[T]) -> f64
+pub fn normalised_kendall_tau<T, K>(x: &[T], y: &[K]) -> f64
 where
     T: Ord,
+    K: Ord,
 {
     let kt = kendall_tau(x, y) as f64;
     let n = x.len() as f64;

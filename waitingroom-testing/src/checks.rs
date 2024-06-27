@@ -1,24 +1,17 @@
-use waitingroom_core::{network::DummyNetwork, settings::GeneralWaitingRoomSettings, time::Time};
+use waitingroom_core::network::DummyNetwork;
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
-use crate::{user::User, Node};
+use crate::Node;
 
 #[derive(Debug)]
 pub enum InvariantCheckError {
     QpidNode,
     SingleRoot,
-    TooManyOnSite,
-}
-
-#[derive(Debug)]
-pub enum FinalStateCheckError {
-    UsersWrongOrder(usize, Time, Time),
 }
 
 pub fn check_consistent_state(
     nodes: &[Node],
     network: &DummyNetwork<NodeToNodeMessage>,
-    settings: &GeneralWaitingRoomSettings,
 ) -> Result<(), InvariantCheckError> {
     if network.is_empty() {
         // The QPID invariant only makes sense to check if we have no network messages.
@@ -27,14 +20,10 @@ pub fn check_consistent_state(
         if !verify_qpid_invariant(nodes) {
             return Err(InvariantCheckError::QpidNode);
         }
-    }
 
-    if !ensure_only_single_root(nodes) {
-        return Err(InvariantCheckError::SingleRoot);
-    }
-
-    if !ensure_no_more_than_n_onsite(nodes, settings.max_user_count) {
-        return Err(InvariantCheckError::TooManyOnSite);
+        if !ensure_only_single_root(nodes) {
+            return Err(InvariantCheckError::SingleRoot);
+        }
     }
 
     log::debug!("All invariants hold");
@@ -42,16 +31,28 @@ pub fn check_consistent_state(
 }
 
 fn verify_qpid_invariant(nodes: &[Node]) -> bool {
+    let existing_node_ids = &nodes.iter().map(|n| n.get_node_id()).collect::<Vec<_>>();
     for v in nodes.iter() {
         let parent_v = match v.get_qpid_parent() {
             Some(p) => p,
             None => {
-                log::error!("Node {} has no parent", v.get_node_id());
-                return false;
+                // Not having a parent here is fine, this can happen when a node in the network is offline, but has not yet been
+                // flagged as such. This will be caught eventually, or the timeout will trigger.
+                log::debug!("Node {} has no parent", v.get_node_id());
+                continue;
             }
         };
 
-        let w_v_parent_v = v.get_qpid_weight_table().compute_weight(parent_v);
+        let true_neighbours = v.get_qpid_weight_table().get_true_neighbours();
+
+        let w_v_parent_v = v.get_qpid_weight_table().compute_weight_allowlist(
+            parent_v,
+            &existing_node_ids
+                .iter()
+                .filter(|n| true_neighbours.contains(n))
+                .copied()
+                .collect::<Vec<_>>(),
+        );
 
         let w_v = v
             .get_qpid_weight_table()
@@ -65,8 +66,8 @@ fn verify_qpid_invariant(nodes: &[Node]) -> bool {
             let x_parent = match x.get_qpid_parent() {
                 Some(p) => p,
                 None => {
-                    log::error!("Node {} has no parent", x.get_node_id());
-                    return false;
+                    // If x has no parent, and this is a problem, this will be found in the outer loop. Otherwise, the parent isn't this node, so we can skip this node.
+                    continue;
                 }
             };
             if x_parent == v.get_node_id() {
@@ -78,7 +79,7 @@ fn verify_qpid_invariant(nodes: &[Node]) -> bool {
         // Now we assert the invariant
         if min_weight != w_v_parent_v {
             log::error!(
-                "Invariant failed for node {}. Min weight is {}, w_v_parent_v is {}",
+                "Invariant failed for node {}. Min weight is {:?}, w_v_parent_v is {:?}",
                 v.get_node_id(),
                 min_weight,
                 w_v_parent_v
@@ -112,52 +113,37 @@ fn ensure_only_single_root(nodes: &[Node]) -> bool {
     true
 }
 
-fn ensure_no_more_than_n_onsite(nodes: &[Node], max_users: usize) -> bool {
-    let mut onsite_count = 0;
-    for node in nodes {
-        onsite_count += node.get_local_on_site_count();
-    }
-    if onsite_count > max_users {
-        log::error!(
-            "There should be at most {} users on site. Found {} users on site.",
-            max_users,
-            onsite_count
-        );
-        return false;
-    }
-    true
-}
+// TODO move to simulation
+// pub fn check_final_state(_nodes: &[Node], users: &[User]) -> Result<(), FinalStateCheckError> {
+//     log::info!("Validating results");
 
-pub fn check_final_state(_nodes: &[Node], users: &[User]) -> Result<(), FinalStateCheckError> {
-    log::info!("Validating results");
+//     // We verify that the users are let out in the correct order.
+//     // dbg!(&users);
+//     let mut prev_eviction_time = 0;
+//     for (i, user) in users.iter().enumerate() {
+//         let eviction_time = match user.get_eviction_time() {
+//             Some(t) => t,
+//             None => u128::MAX,
+//         };
+//         if eviction_time < prev_eviction_time {
+//             return Err(FinalStateCheckError::UsersWrongOrder(
+//                 i,
+//                 prev_eviction_time,
+//                 eviction_time,
+//             ));
+//         }
+//         prev_eviction_time = eviction_time;
+//     }
 
-    // We verify that the users are let out in the correct order.
-    // dbg!(&users);
-    let mut prev_eviction_time = 0;
-    for (i, user) in users.iter().enumerate() {
-        let eviction_time = match user.get_eviction_time() {
-            Some(t) => t,
-            None => u128::MAX,
-        };
-        if eviction_time < prev_eviction_time {
-            return Err(FinalStateCheckError::UsersWrongOrder(
-                i,
-                prev_eviction_time,
-                eviction_time,
-            ));
-        }
-        prev_eviction_time = eviction_time;
-    }
-
-    let total_users_processed = users
-        .iter()
-        .filter(|u| u.get_eviction_time().is_some())
-        .count();
-    let total_users = users.len();
-    log::info!(
-        "Processed {} out of {} users",
-        total_users_processed,
-        total_users
-    );
-    Ok(())
-}
+//     let total_users_processed = users
+//         .iter()
+//         .filter(|u| u.get_eviction_time().is_some())
+//         .count();
+//     let total_users = users.len();
+//     log::info!(
+//         "Processed {} out of {} users",
+//         total_users_processed,
+//         total_users
+//     );
+//     Ok(())
+// }

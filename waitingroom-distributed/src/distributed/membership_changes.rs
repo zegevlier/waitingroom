@@ -6,7 +6,7 @@ use waitingroom_core::{
 };
 use waitingroom_spanning_trees::SpanningTree;
 
-use crate::{messages::NodeToNodeMessage, DistributedWaitingRoom};
+use crate::{messages::NodeToNodeMessage, weight_table::Weight, DistributedWaitingRoom};
 
 impl<T, R, N> DistributedWaitingRoom<T, R, N>
 where
@@ -16,10 +16,15 @@ where
 {
     pub fn join_at(&mut self, at: NodeId) -> Result<(), WaitingRoomError> {
         log::debug!("[{}] Joining at {}", self.node_id, at);
-        self.qpid_weight_table.set(self.node_id, Time::MAX, 0);
-        self.network_handle
-            .send_message(at, NodeToNodeMessage::NodeJoin(self.node_id))?;
-        Ok(())
+        if at == self.node_id {
+            self.initialise_alone()
+        } else {
+            self.qpid_weight_table
+                .set(self.node_id, Weight::new(Time::MAX, 0, self.node_id), 0);
+            self.network_handle
+                .send_message(at, NodeToNodeMessage::NodeJoin(self.node_id))?;
+            Ok(())
+        }
     }
 
     pub fn node_join_message(&mut self, node_id: NodeId) -> Result<(), WaitingRoomError> {
@@ -35,7 +40,8 @@ where
         log::debug!("[{}] Initialising alone", self.node_id);
         self.tree_iteration += 1;
         self.qpid_parent = Some(self.node_id);
-        self.qpid_weight_table.set(self.node_id, Time::MAX, 0);
+        self.qpid_weight_table
+            .set(self.node_id, Weight::new(Time::MAX, 0, self.node_id), 0);
         Ok(())
     }
 
@@ -136,7 +142,7 @@ where
         Ok(())
     }
 
-    fn restructure_tree(&mut self) -> Result<(), WaitingRoomError> {
+    pub(super) fn restructure_tree(&mut self) -> Result<(), WaitingRoomError> {
         let new_tree = SpanningTree::from_member_list(self.network_members.clone());
         self.tree_iteration += 1;
 
@@ -211,16 +217,16 @@ where
             }
         }
 
-        for neighbour in new_neighbours {
-            if !old_neighbours.contains(&neighbour) {
+        for neighbour in new_neighbours.iter() {
+            if !old_neighbours.contains(neighbour) {
                 // We have a neighbour in the new tree that is not in the old tree.
                 // We need to add this neighbour.
 
                 // If the neighbour is already in the weight table, some messages got reordered, but that's fine.
                 // We still add them, so they get an update if they need it. We don't count them though, since
                 // nothing on our side changed.
-                self.add_neighbour(neighbour)?;
-                if self.qpid_weight_table.get_weight(neighbour).is_none() {
+                self.add_neighbour(*neighbour)?;
+                if self.qpid_weight_table.get_weight(*neighbour).is_none() {
                     any_added = true;
                 }
             }
@@ -233,6 +239,7 @@ where
                 self.node_id
             );
             self.qpid_parent = None; // We don't know who the parent should be, so we set it to None.
+            self.should_send_find_root = true;
         } else if any_added {
             // We've only added neighbours. We need to wait for the updates from the new neighbours.
             log::debug!(
@@ -242,14 +249,32 @@ where
             // self.qpid_parent = None; // We don't know who the parent should be, so we set it to None.
         } else if any_removed {
             // We've only removed neighbours. We can just recompute the parent.
-            let new_parent = self.qpid_weight_table.get_smallest().unwrap();
-            log::debug!(
-                "[{}] Removed neighbours. New parent: {}",
-                self.node_id,
-                new_parent
-            );
-            self.qpid_parent = Some(new_parent);
+            // This happens in the heuristic set below here.
+            self.qpid_parent = None;
+            self.should_send_find_root = true;
+            // send an update to all neighbours
+            log::debug!("[{}] Removed neighbours, finding new parent", self.node_id);
         }
+        for neighbour in new_neighbours.iter().copied() {
+            if neighbour == self.node_id {
+                continue;
+            }
+            let weight = self.qpid_weight_table.compute_weight(neighbour);
+
+            if self.qpid_last_update_values.iter().find_map(|x| {
+                if x.0 == neighbour {
+                    Some(x.1)
+                } else {
+                    None
+                }
+            }) != Some(weight)
+            {
+                // We haven't received an update from this neighbour yet, so we'll send one.
+                self.send_qpid_update(neighbour, weight)?;
+            }
+        }
+        self.qpid_weight_table.set_true_neighbours(new_neighbours);
+
         self.spanning_tree = tree;
 
         // We'll see if we have all the information we need to set a new QPID parent. If we do, we'll set it.
@@ -270,14 +295,7 @@ where
         log::debug!("[{}] Adding neighbour {}", self.node_id, neighbour);
         // Now, we send an update message to our new neighbour.
         let weight = self.qpid_weight_table.compute_weight(neighbour);
-        let updated_iteration = self.get_update_iteration(neighbour);
-        self.network_handle.send_message(
-            neighbour,
-            NodeToNodeMessage::QPIDUpdateMessage {
-                weight,
-                updated_iteration,
-            },
-        )?;
+        self.send_qpid_update(neighbour, weight)?;
 
         Ok(())
     }

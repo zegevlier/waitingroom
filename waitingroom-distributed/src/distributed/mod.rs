@@ -1,4 +1,4 @@
-use crate::messages::NodeToNodeMessage;
+use crate::{messages::NodeToNodeMessage, weight_table::Weight};
 use waitingroom_core::{
     network::{Network, NetworkHandle},
     pass::Pass,
@@ -64,6 +64,8 @@ where
     /// Monotonically increasing counter for the QPID update and FindRoot messages sent to each node.
     /// This is used to determine whether a message is outdated or not.
     qpid_update_iterations: Vec<(NodeId, u64)>,
+    /// The last value sent in a QPID update message to this node.
+    qpid_last_update_values: Vec<(NodeId, Weight)>,
 
     // Also see count.rs
     /// The count parent is the ID of the parent node in the count tree.
@@ -73,6 +75,8 @@ where
     count_iteration: Time,
     /// The count responses are used to store the responses from the neighbours in the count tree. They are aggregated sent to the parent when all responses are received.
     count_responses: Vec<(NodeId, usize, usize)>,
+    /// The number of failed counts in a row. If this number is too high, the tree is restructured.
+    failed_counts: usize,
 
     /// This list includes all members of the network, also the ones that are not neighbours in the QPID network.
     network_members: Vec<NodeId>,
@@ -86,6 +90,9 @@ where
     fd_last_check_node: Option<NodeId>,
     /// The fault detection queue contains the nodes that need to be checked. When it is empty, it gets refilled with all nodes in a random order.
     fd_queue: Vec<NodeId>,
+
+    // TODO Write docs
+    should_send_find_root: bool,
 }
 
 impl<T, R, N> WaitingRoomUserTriggered for DistributedWaitingRoom<T, R, N>
@@ -96,6 +103,10 @@ where
 {
     fn join(&mut self) -> Result<waitingroom_core::ticket::Ticket, WaitingRoomError> {
         log::info!("[NODE {}] join", self.node_id);
+
+        if self.qpid_parent.is_none() {
+            return Err(WaitingRoomError::QPIDNotInitialized);
+        }
         let ticket = waitingroom_core::ticket::Ticket::new(
             self.node_id,
             self.settings.ticket_refresh_time,
@@ -176,6 +187,7 @@ where
                     self.settings.ticket_refresh_time,
                     self.settings.ticket_expiry_time,
                     &self.time_provider,
+                    self.node_id,
                 );
                 ticket
             })
@@ -351,8 +363,8 @@ where
         // If we have a last check node, and we haven't had a response after the timeout, we consider the node to be down.
         if let Some(last_check_node) = self.fd_last_check_node {
             if now_time - self.fd_last_check_time > self.settings.fault_detection_timeout {
-                log::warn!("[NODE {}] node {} is down", self.node_id, last_check_node);
-                // TODO: Implement recovery.
+                log::info!("[NODE {}] node {} is down", self.node_id, last_check_node);
+                self.remove_node(last_check_node)?;
                 // We set the last check node to None.
                 self.fd_last_check_node = None;
             }
@@ -484,6 +496,9 @@ where
             count_parent: None,
             fd_last_check_node: None,
             qpid_parent: None,
+            should_send_find_root: false,
+            qpid_last_update_values: vec![],
+            failed_counts: 0,
         }
     }
 
@@ -492,11 +507,11 @@ where
     pub fn testing_overwrite_qpid(
         &mut self,
         parent: Option<NodeId>,
-        weight_table: Vec<(NodeId, Time)>,
+        weight_table: Vec<(NodeId, Weight)>,
     ) {
         self.qpid_parent = parent;
         self.qpid_weight_table = WeightTable::from_vec(self.node_id, weight_table);
-        self.network_members = self.qpid_weight_table.all_neighbours();
+        self.network_members = self.qpid_weight_table.get_all_neighbours();
     }
 
     /// Add a ticket to the local queue, incrementing the metric if the ticket type is normal.
@@ -511,8 +526,9 @@ where
         }
         // We only call QPID insert if the current join time is less than the current QPID weight.
         // This means that all inserts that are *not* at the front of the queue don't make any QPID messages, which is nice.
-        if ticket.join_time < self.qpid_weight_table.get_weight(self.node_id).unwrap() {
-            self.qpid_insert(ticket.join_time)?;
+        let new_weight = Weight::new(ticket.join_time, ticket.identifier, self.node_id);
+        if new_weight < self.qpid_weight_table.get_weight(self.node_id).unwrap() {
+            self.qpid_insert(new_weight)?;
         }
         Ok(())
     }

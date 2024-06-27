@@ -110,6 +110,7 @@ where
                     self.settings.ticket_refresh_time,
                     self.settings.ticket_expiry_time,
                     &self.time_provider,
+                    SELF_NODE_ID,
                 );
                 ticket
             })
