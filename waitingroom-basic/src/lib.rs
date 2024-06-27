@@ -248,16 +248,10 @@ where
         let user_count = self.on_site_list.len() + self.queue_leaving_list.len();
 
         // If there are too few users on site, let users out of the queue.
-        if user_count < self.settings.min_user_count {
-            self.let_users_out_of_queue(self.settings.min_user_count - self.on_site_list.len())?;
+        if user_count < self.settings.target_user_count {
+            self.let_users_out_of_queue(self.settings.target_user_count - self.on_site_list.len())?;
         }
-        // If there are too many users on the site, add dummy users to the queue.
-        if user_count > self.settings.max_user_count {
-            // This should never happen
-            for _ in 0..(self.on_site_list.len() - self.settings.max_user_count) {
-                self.enqueue(Ticket::new_drain(SELF_NODE_ID));
-            }
-        }
+
 
         Ok(())
     }

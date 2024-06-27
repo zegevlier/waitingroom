@@ -78,8 +78,7 @@ fn main() {
 
     let config = SimulationConfig {
         settings: GeneralWaitingRoomSettings {
-            min_user_count: 20,
-            max_user_count: 25,
+            target_user_count: 20,
             ticket_refresh_time: 600,
             ticket_expiry_time: 2000,
             pass_expiry_time: 0,
@@ -122,8 +121,7 @@ fn one_one_test() {
 
     let config = SimulationConfig {
         settings: GeneralWaitingRoomSettings {
-            min_user_count: 20,
-            max_user_count: 25,
+            target_user_count: 20,
             ticket_refresh_time: 600,
             ticket_expiry_time: 2000,
             pass_expiry_time: 0,

@@ -1,13 +1,9 @@
 #[derive(Clone, Debug, Copy)]
 pub struct GeneralWaitingRoomSettings {
-    /// The minimum number of users that will be allowed on the site.
+    /// The intended number of users that will be allowed on the site.
     /// If there are less than this number of users on the site,
     /// more users are let in.
-    pub min_user_count: usize,
-    /// The maximum number of users that will be allowed on the site.
-    /// If there are more than this number of users on the site,
-    /// users are not let in a number of times.
-    pub max_user_count: usize,
+    pub target_user_count: usize,
 
     /// The time in milliseconds between ticket refreshes carried out by the client.
     pub ticket_refresh_time: u128,
@@ -35,8 +31,7 @@ pub struct GeneralWaitingRoomSettings {
 impl Default for GeneralWaitingRoomSettings {
     fn default() -> Self {
         Self {
-            min_user_count: 20,
-            max_user_count: 20,
+            target_user_count: 20,
 
             ticket_refresh_time: 20 * 1000,
             ticket_expiry_time: 45 * 1000,

@@ -20,8 +20,7 @@ fn main() {
     env_logger::init();
 
     let settings = GeneralWaitingRoomSettings {
-        min_user_count: 1,
-        max_user_count: 1,
+        target_user_count: 1,
         ticket_refresh_time: 6000,
         ticket_expiry_time: 15000,
         pass_expiry_time: 6000,

@@ -19,8 +19,7 @@ type Node = DistributedWaitingRoom<
 #[test]
 fn basic_test() {
     let settings = GeneralWaitingRoomSettings {
-        min_user_count: 1,
-        max_user_count: 1,
+        target_user_count: 1,
         ticket_refresh_time: 6000,
         ticket_expiry_time: 15000,
         pass_expiry_time: 6000,
@@ -63,8 +62,7 @@ fn basic_test() {
 #[test]
 fn simple_distributed_test() {
     let settings = GeneralWaitingRoomSettings {
-        min_user_count: 1,
-        max_user_count: 1,
+        target_user_count: 1,
         ticket_refresh_time: 6000,
         ticket_expiry_time: 15000,
         pass_expiry_time: 6000,
@@ -137,8 +135,7 @@ fn simple_distributed_test() {
 #[test]
 fn check_letting_users_out_of_queue_on_timer() {
     let settings = GeneralWaitingRoomSettings {
-        min_user_count: 1,
-        max_user_count: 1,
+        target_user_count: 1,
         ticket_refresh_time: 6000,
         ticket_expiry_time: 15000,
         pass_expiry_time: 6000,
@@ -470,8 +467,7 @@ fn ensure_only_single_root(nodes: &[Node]) {
 fn mid_eviction_time_root_change() {
     let settings = GeneralWaitingRoomSettings {
         eviction_interval: 1000,
-        min_user_count: 1,
-        max_user_count: 1,
+        target_user_count: 1,
         ..Default::default()
     };
 

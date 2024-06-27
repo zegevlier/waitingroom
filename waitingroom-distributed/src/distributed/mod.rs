@@ -554,8 +554,8 @@ where
         on_site_count: usize,
     ) -> Result<(), WaitingRoomError> {
         log::info!("[NODE {}] let users out of queue", self.node_id);
-        if on_site_count < self.settings.min_user_count {
-            let to_let_out = queue_count.min(self.settings.min_user_count - on_site_count);
+        if on_site_count < self.settings.target_user_count {
+            let to_let_out = queue_count.min(self.settings.target_user_count - on_site_count);
             log::debug!(
                 "[NODE {}] not enough users on site, need to let {} users out of queue",
                 self.node_id,
@@ -564,17 +564,6 @@ where
             // There is no need to let out more users than there are in the queue.
             for _ in 0..to_let_out {
                 self.qpid_delete_min()?;
-            }
-        }
-
-        if on_site_count > self.settings.max_user_count {
-            log::debug!(
-                "[NODE {}] too many users on site, need to add {} dummy users to the queue",
-                self.node_id,
-                on_site_count - self.settings.max_user_count
-            );
-            for _ in 0..(on_site_count - self.settings.max_user_count) {
-                self.enqueue(Ticket::new_drain(self.node_id))?;
             }
         }
 
