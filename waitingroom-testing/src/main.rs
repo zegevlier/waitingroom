@@ -9,6 +9,8 @@ use waitingroom_core::{
 };
 use waitingroom_distributed::messages::NodeToNodeMessage;
 
+use std::io::Write;
+
 mod checks;
 mod simulation;
 
@@ -76,7 +78,7 @@ fn main() {
 
     initialise_logging(&time_provider, logging_level);
 
-    let config = SimulationConfig {
+    let mut config = SimulationConfig {
         settings: GeneralWaitingRoomSettings {
             target_user_count: 200,
             ticket_refresh_time: 600,
@@ -89,7 +91,7 @@ fn main() {
             cleanup_interval: 1000,
         },
         initial_node_count: 8,
-        latency: LatencySetting::UniformRandom(5, 10),
+        latency: LatencySetting::UniformRandom(10, 20),
         total_user_count: 100,
         nodes_added_count: 1,
         nodes_killed_count: 1,
@@ -101,16 +103,56 @@ fn main() {
         },
     };
 
+    let possible_user_targets = [20, 100, 99999999];
+    let possible_total_user_counts = [100, 500, 2500];
+    let possible_node_killed_counts = [0, 1, 5];
+
+    for target_user_count in possible_user_targets {
+        for total_user_count in possible_total_user_counts.iter() {
+            for nodes_killed_count in possible_node_killed_counts.iter() {
+                let output_file = format!(
+                    "results/target_{}_total_{}_killed_{}.jsonl",
+                    target_user_count, total_user_count, nodes_killed_count
+                );
+
+                // if output file exists, skip
+                if std::fs::metadata(&output_file).is_ok() {
+                    log::info!("Skipping simulation with target_user_count: {}, total_user_count: {}, nodes_killed_count: {}", target_user_count, total_user_count, nodes_killed_count);
+                    continue;
+                }
+                config.settings.target_user_count = target_user_count;
+                config.total_user_count = *total_user_count;
+                config.nodes_killed_count = *nodes_killed_count;
+                config.nodes_added_count = *nodes_killed_count;
+                let simulation = Simulation::new(config.clone());
+                let results: Vec<_> = (0..1000)
+                    .into_par_iter()
+                    .filter_map(|seed| match simulation.run(seed) {
+                        Ok(results) => {
+                            log::info!("Simulation {} completed successfully: {:?}", seed, results);
+                            Some(results)
+                        }
+                        Err(e) => {
+                            log::error!("Simulation failed: {:?}", e);
+                            None
+                        }
+                    })
+                    .collect();
+
+                let file = std::fs::File::create(output_file).unwrap();
+                let mut writer = std::io::BufWriter::new(file);
+
+                for result in results {
+                    writeln!(writer, "{}", serde_json::to_string(&result).unwrap()).unwrap();
+                }
+            }
+        }
+    }
+
     let simulation = Simulation::new(config);
     dbg!(simulation.run(1).unwrap());
 
     // #[allow(clippy::useless_conversion)]
-    // (0..1000)
-    //     .into_iter()
-    //     .for_each(|seed| match simulation.run(seed) {
-    //         Ok(results) => log::info!("Simulation {} completed successfully: {:?}", seed, results),
-    //         Err(e) => log::error!("Simulation failed: {:?}", e),
-    //     });
 }
 
 fn one_one_test() {

@@ -2,6 +2,7 @@ use waitingroom_core::{network::LatencySetting, settings::GeneralWaitingRoomSett
 
 use super::UserBehaviour;
 
+#[derive(Clone, Debug)]
 pub struct SimulationConfig {
     pub settings: GeneralWaitingRoomSettings,
     pub latency: LatencySetting,

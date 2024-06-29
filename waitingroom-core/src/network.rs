@@ -39,6 +39,7 @@ pub enum Latency {
     UniformRandom(u128, u128, DeterministicRandomProvider),
 }
 
+#[derive(Clone, Debug)]
 pub enum LatencySetting {
     Fixed(u128),
     UniformRandom(u128, u128),

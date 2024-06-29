@@ -15,7 +15,7 @@ pub(super) struct SimulationResultsBuilder {
     total_nodes_removed: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SimulationResults {
     /// Number of users that entered the waiting room.
     pub total_users_added: usize,

@@ -1,6 +1,6 @@
 use waitingroom_core::{pass::Pass, ticket::Ticket, time::Time};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UserBehaviour {
     pub abandon_odds: u64,
     pub pass_refresh_odds: u64,

@@ -15,3 +15,5 @@ fern = {version = "0.6.2", features = ["colored"] }
 kendall-tau = { workspace = true }
 strum = { version = "0.26.2", features = ["derive"] }
 rayon = "1.10.0"
+serde_json = "1.0.118"
+serde = { workspace = true, features = ["derive"] }
