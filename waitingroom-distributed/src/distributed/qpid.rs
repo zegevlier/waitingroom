@@ -310,6 +310,12 @@ where
     }
 
     pub(crate) fn heuristic_set_qpid_parent(&mut self) -> bool {
+        // if self.spanning_tree.get_node_list().len() == 1 {
+        //     // We are the only node in the network. We are our own parent.
+        //     self.qpid_parent = Some(self.node_id);
+        //     return true;
+        // }
+
         // If the qpid weight table does not contain all the spanning tree neighbours
         // or if the spanning tree is empty, we can't initialize QPID yet.
         let mut all_contained = true;

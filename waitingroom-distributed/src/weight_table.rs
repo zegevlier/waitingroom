@@ -1,6 +1,6 @@
 use waitingroom_core::{ticket::TicketIdentifier, time::Time, NodeId};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Weight {
     join_time: Time,
     ticket_id: TicketIdentifier,

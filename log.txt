@@ -1,0 +1,21 @@
+warning: method `all_weights` is never used
+   --> waitingroom-distributed/src/weight_table.rs:180:12
+    |
+62  | impl WeightTable {
+    | ---------------- method in this implementation
+...
+180 |     pub fn all_weights(&self) -> Vec<(NodeId, Weight)> {
+    |            ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: `waitingroom-distributed` (lib) generated 1 warning
+   Compiling waitingroom-http v0.1.0 (/home/zegevlier/waitingroom/waitingroom-http)
+warning: function `interface` is never used
+  --> waitingroom-http/src/interface.rs:23:21
+   |
+23 | pub(crate) async fn interface(listening_address: SocketAddr) {
+   |                     ^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+

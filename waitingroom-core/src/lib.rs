@@ -9,7 +9,7 @@ pub mod settings;
 pub mod ticket;
 pub mod time;
 
-pub use error::WaitingRoomError;
+pub use error::{WaitingRoomError, NetworkError};
 
 /// The type for node identifiers. This is specified here to allow for easy changes in the future.
 pub type NodeId = usize;

@@ -13,7 +13,7 @@ use crate::{
     NodeId,
 };
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Message<M> {
     pub from_node: NodeId,
     pub to_node: NodeId,
@@ -30,7 +30,7 @@ pub trait Network<M>: std::fmt::Debug {
 
 pub trait NetworkHandle<M>: Debug {
     fn send_message(&self, to_node: NodeId, message: M) -> Result<(), NetworkError>;
-    fn receive_message(&self) -> Result<Option<Message<M>>, NetworkError>;
+    fn receive_message(&mut self) -> Result<Option<Message<M>>, NetworkError>;
 }
 
 #[derive(Clone)]
@@ -235,7 +235,7 @@ where
         self.network.send_message(self.node, to_node, message)
     }
 
-    fn receive_message(&self) -> Result<Option<Message<M>>, NetworkError> {
+    fn receive_message(&mut self) -> Result<Option<Message<M>>, NetworkError> {
         self.network.receive_message(self.node)
     }
 }

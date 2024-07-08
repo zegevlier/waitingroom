@@ -5,7 +5,7 @@ use waitingroom_core::time::Time;
 
 use reqwest::cookie::Jar;
 
-const URL: &str = "http://127.0.0.1:8051";
+const URL: &str = "http://127.0.0.1:8000";
 
 /// This utility function is used to get the current time in milliseconds since the UNIX epoch.
 /// This is used to set the join time, refresh time and expiry time of tickets and passes.

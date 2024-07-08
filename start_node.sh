@@ -1,0 +1,1 @@
+pm2 start --name node$1 "RUST_LOG="debug" cargo r --release -p waitingroom-http -- $1 8001" --log node$1.log

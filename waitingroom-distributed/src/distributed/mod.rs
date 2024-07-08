@@ -352,7 +352,7 @@ where
     }
 
     fn fault_detection(&mut self) -> Result<(), WaitingRoomError> {
-        log::info!("[NODE {}] fault detection", self.node_id);
+        log::debug!("[NODE {}] fault detection", self.node_id);
         let now_time = self.time_provider.get_now_time();
 
         if self.network_members.len() <= 1 {

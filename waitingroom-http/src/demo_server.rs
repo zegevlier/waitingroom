@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use axum::{extract::Request, routing::get, Router};
 
 pub(crate) async fn demo_server(listening_address: SocketAddr) {
@@ -9,7 +11,7 @@ pub(crate) async fn demo_server(listening_address: SocketAddr) {
         )
     }));
 
-    let listener = tokio::net::TcpListener::bind(std::net::SocketAddr::from(listening_address))
+    let listener = tokio::net::TcpListener::bind(listening_address)
         .await
         .unwrap();
     log::info!(

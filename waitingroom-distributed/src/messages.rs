@@ -3,7 +3,7 @@ use waitingroom_spanning_trees::SpanningTree;
 
 use crate::weight_table::Weight;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum NodeToNodeMessage {
     QPIDUpdateMessage {
         weight: Weight,

@@ -5,7 +5,7 @@ use waitingroom_core::NodeId;
 type AdjacencyList = Vec<(NodeId, Vec<usize>)>;
 type Edge = (NodeId, NodeId);
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SpanningTree {
     adjacency_list: AdjacencyList,
 }

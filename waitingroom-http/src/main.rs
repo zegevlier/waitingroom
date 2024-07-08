@@ -1,112 +1,63 @@
-// This initial implementation was just to get something working as quickly as possible.
-// It is pretty bad and doesn't have very clean code. This will be improved in the future.
+mod demo_server;
+mod http_network;
+mod waiting_room;
+mod interface;
 
-use std::future::IntoFuture;
-use std::sync::{Arc, Mutex};
+pub(crate) use http_network::HttpNetworkProvider;
+pub(crate) use interface::InterfaceMessageRequest;
 
-use axum::http::HeaderValue;
+// impl WaitingRoomStatus {
+//     fn get_header_value(&self) -> HeaderValue {
+//         HeaderValue::from_str(&format!("{:?}", self)).unwrap()
+//     }
 
-// use foundations::cli::{Arg, ArgAction, Cli};
-// use foundations::telemetry::{init_with_server, log, tracing, TelemetryContext};
-use hyper::StatusCode;
-use hyper_util::client::legacy::connect::HttpConnector;
-use hyper_util::rt::TokioExecutor;
+//     fn get_text(&self) -> String {
+//         match self {
+//             WaitingRoomStatus::NewTicket => "New ticket! Refreshing now...".to_string(),
+//             WaitingRoomStatus::TicketRefreshed(pos) => {
+//                 format!("You are at queue position {}", pos)
+//             }
+//             WaitingRoomStatus::InvalidTicket => {
+//                 "Ticket invalid... Rejoining waiting room...".to_string()
+//             }
+//             WaitingRoomStatus::InvalidPass => {
+//                 "Pass invalid... Rejoining waiting room...".to_string()
+//             }
+//             WaitingRoomStatus::NewPass => "You left the waiting room! Redirecting...".to_string(),
+//             WaitingRoomStatus::PassRefreshed => {
+//                 panic!("get_text() should not be called on PassRefreshed")
+//             }
+//         }
+//     }
+// }
 
-// use settings::HttpServerSettings;
-use waitingroom_basic::BasicWaitingRoom;
-use waitingroom_core::pass::Pass;
-use waitingroom_core::random::TrueRandomProvider;
-use waitingroom_core::ticket::Ticket;
-use waitingroom_core::time::SystemTimeProvider;
-use waitingroom_core::WaitingRoomUserTriggered;
+// /// Utility function to create a response with the appropriate headers.
+// fn make_response(
+//     jar: SignedCookieJar,
+//     refresh: Option<u64>,
+//     waiting_room_status: WaitingRoomStatus,
+// ) -> (SignedCookieJar, Response) {
+//     let mut response = Response::new(Body::from(waiting_room_status.get_text()));
+//     if let Some(refresh) = refresh {
+//         response.headers_mut().insert(
+//             "Refresh",
+//             HeaderValue::from_str(&format!("{}", refresh)).unwrap(),
+//         );
+//     }
 
-use axum::{
-    body::Body,
-    extract::{Request, State},
-    http::uri::Uri,
-    response::{IntoResponse, Response},
-    routing::get,
-    Router,
-};
+//     if let WaitingRoomStatus::TicketRefreshed(pos) = waiting_room_status {
+//         response.headers_mut().insert(
+//             "X-WR-Position",
+//             HeaderValue::from_str(&format!("{}", pos)).unwrap(),
+//         );
+//     }
 
-use axum_extra::extract::cookie::{Cookie, Key, SignedCookieJar};
-
-// mod demo_server;
-// mod settings;
-// mod timers;
-
-type Client = hyper_util::client::legacy::Client<HttpConnector, Body>;
-
-#[derive(Clone)]
-struct AppState {
-    waitingroom: Arc<Mutex<BasicWaitingRoom<SystemTimeProvider, TrueRandomProvider>>>,
-    client: Client,
-    key: Key,
-    // settings: HttpServerSettings,
-}
-
-#[derive(Debug)]
-enum WaitingRoomStatus {
-    NewTicket,
-    TicketRefreshed(usize),
-    InvalidTicket,
-    NewPass,
-    PassRefreshed,
-    InvalidPass,
-}
-
-impl WaitingRoomStatus {
-    fn get_header_value(&self) -> HeaderValue {
-        HeaderValue::from_str(&format!("{:?}", self)).unwrap()
-    }
-
-    fn get_text(&self) -> String {
-        match self {
-            WaitingRoomStatus::NewTicket => "New ticket! Refreshing now...".to_string(),
-            WaitingRoomStatus::TicketRefreshed(pos) => {
-                format!("You are at queue position {}", pos)
-            }
-            WaitingRoomStatus::InvalidTicket => {
-                "Ticket invalid... Rejoining waiting room...".to_string()
-            }
-            WaitingRoomStatus::InvalidPass => {
-                "Pass invalid... Rejoining waiting room...".to_string()
-            }
-            WaitingRoomStatus::NewPass => "You left the waiting room! Redirecting...".to_string(),
-            WaitingRoomStatus::PassRefreshed => {
-                panic!("get_text() should not be called on PassRefreshed")
-            }
-        }
-    }
-}
-
-/// Utility function to create a response with the appropriate headers.
-fn make_response(
-    jar: SignedCookieJar,
-    refresh: Option<u64>,
-    waiting_room_status: WaitingRoomStatus,
-) -> (SignedCookieJar, Response) {
-    let mut response = Response::new(Body::from(waiting_room_status.get_text()));
-    if let Some(refresh) = refresh {
-        response.headers_mut().insert(
-            "Refresh",
-            HeaderValue::from_str(&format!("{}", refresh)).unwrap(),
-        );
-    }
-
-    if let WaitingRoomStatus::TicketRefreshed(pos) = waiting_room_status {
-        response.headers_mut().insert(
-            "X-WR-Position",
-            HeaderValue::from_str(&format!("{}", pos)).unwrap(),
-        );
-    }
-
-    response.headers_mut().insert(
-        "X-WR-Status",
-        HeaderValue::from_str(&format!("{:?}", waiting_room_status)).unwrap(),
-    );
-    (jar, response)
-}
+//     response.headers_mut().insert(
+//         "X-WR-Status",
+//         HeaderValue::from_str(&format!("{:?}", waiting_room_status)).unwrap(),
+//     );
+//     (jar, response)
+// }
 
 // async fn handler(
 //     State(state): State<AppState>,
@@ -261,77 +212,33 @@ fn make_response(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Obtain service information from Cargo.toml
-    // let service_info = foundations::service_info!();
+    env_logger::init();
+    // If the first argument is "demo", start the demo server
+    if std::env::args().nth(1) == Some("demo".to_string()) {
+        demo_server::demo_server("127.0.0.1:9000".parse().unwrap()).await;
+        return Ok(());
+    }
 
-    // let cli = Cli::<HttpServerSettings>::new(
-    //     &service_info,
-    //     vec![Arg::new("dry-run")
-    //         .long("dry-run")
-    //         .action(ArgAction::SetTrue)
-    //         .help("Validate or generate config without running the server")],
-    // )?;
+    if std::env::args().nth(1) == Some("interface".to_string()) {
+        interface::interface("127.0.0.1:8000".parse().unwrap()).await;
+        return Ok(());
+    }
 
-    // if cli.arg_matches.get_flag("dry-run") {
-    //     return Ok(());
-    // }
+    // Otherwise, we start the waiting room. We start on the port and node ID, which are the same, specified in the first argument, connecting to the server specified in the third argument.
+    assert_eq!(
+        std::env::args().len(),
+        3,
+        "Please provide node ID and server address"
+    );
 
-    // // Initialize telemetry with the settings obtained from the config.
-    // let telemetry_server_fut = init_with_server(&service_info, &cli.settings.telemetry, vec![])?;
-    // if let Some(telemetry_server_addr) = telemetry_server_fut.server_addr() {
-    //     log::info!(
-    //         "Telemetry server is listening on http://{}",
-    //         telemetry_server_addr
-    //     );
-    // }
+    let node_id = std::env::args().nth(1).unwrap();
+    let server = std::env::args().nth(2).unwrap();
+    waiting_room::waiting_room(
+        format!("127.0.0.1:{}", node_id).parse().unwrap(),
+        node_id.parse().unwrap(),
+        server.parse().unwrap(),
+    )
+    .await;
 
-    // // Only start the demo HTTP server if it is enabled in the config.
-    // if cli.settings.demo_http_server.enabled {
-    //     tokio::spawn(demo_server::demo_server(
-    //         cli.settings.demo_http_server.listening_address,
-    //     ));
-    // }
-
-    // // The waiting room is in an Arc<Mutex<_>>, because it does not support any concurrency.
-    // let waitingroom = Arc::new(Mutex::new(BasicWaitingRoom::new(
-    //     cli.settings.waitingroom,
-    //     SystemTimeProvider::new(),
-    //     TrueRandomProvider::new(),
-    // )));
-
-    // let timers = timers::timers(waitingroom.clone(), &cli.settings.timer);
-
-    // let client: Client =
-    //     hyper_util::client::legacy::Client::<(), ()>::builder(TokioExecutor::new())
-    //         .build(HttpConnector::new());
-
-    // let app = Router::new()
-    //     .fallback(get(|state, req| {
-    //         // Each request gets its own telemetry context.
-    //         TelemetryContext::current()
-    //             .with_forked_log()
-    //             .apply(handler(state, req))
-    //     }))
-    //     .with_state(AppState {
-    //         waitingroom,
-    //         client,
-    //         key: Key::from(&hex::decode(&cli.settings.cookie_secret)?),
-    //         settings: cli.settings.clone(),
-    //     });
-
-    // let listener =
-    //     tokio::net::TcpListener::bind(std::net::SocketAddr::from(cli.settings.listening_address))
-    //         .await
-    //         .unwrap();
-    // log::info!(
-    //     "Waiting room listening on http://{}",
-    //     listener.local_addr().unwrap()
-    // );
-
-    // let web_server = axum::serve(listener, app).into_future();
-
-    // tokio::join!(timers, web_server, telemetry_server_fut)
-    //     .2
-    //     .unwrap();
     Ok(())
 }

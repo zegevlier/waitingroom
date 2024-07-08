@@ -48,7 +48,7 @@ where
         self.count_responses.clear();
 
         // If we have any neighbours, we need to ask them to participate in the count before we can respond.
-        if self.qpid_weight_table.neighbour_count() > 1 || self.node_id == from_node {
+        if self.qpid_weight_table.neighbour_count() > 1 || (self.node_id == from_node && self.qpid_weight_table.neighbour_count() > 0){
             for node_id in &self.qpid_weight_table.get_true_neighbours() {
                 if *node_id != from_node && *node_id != self.node_id {
                     self.network_handle
@@ -58,6 +58,7 @@ where
         } else {
             // If we don't have any neighbours, we can respond immediately.
             if self.node_id == from_node {
+                // We add 0 here, since we add our own counts later
                 self.count_response(from_node, count_iteration, 0, 0)?;
             } else {
                 self.network_handle.send_message(
@@ -106,7 +107,7 @@ where
             .push((from_node, queue_count, on_site_count));
 
         if self.count_responses.len()
-            == self
+            >= self
                 .qpid_weight_table
                 .get_true_neighbours()
                 .iter()

@@ -31,6 +31,7 @@ impl std::fmt::Display for WaitingRoomError {
 pub enum NetworkError {
     NodeIDAlreadyUsed,
     DestNodeNotFound,
+    MessageNotDelivered,
 }
 
 impl From<NetworkError> for WaitingRoomError {
