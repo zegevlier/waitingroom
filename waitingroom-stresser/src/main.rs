@@ -31,7 +31,7 @@ async fn run_clients(count: usize, parallelism_per_thread: usize) {
                             if errors > 5 {
                                 panic!("Too many errors: {}", e);
                             }
-                            println!("Error: {}", e);
+                            println!("Error: {:?}", e);
                             tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
                             continue;
                         }
