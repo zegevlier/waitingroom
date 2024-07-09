@@ -24,7 +24,7 @@ async fn run_clients(count: usize, parallelism_per_thread: usize) {
             loop {
                 let mut errors = 0;
                 let response = loop {
-                    let response = match client.get("http://10.0.0.3:8000/").send().await {
+                    let response = match client.get("http://10.0.0.2:8000/").send().await {
                         Ok(r) => r,
                         Err(e) => {
                             errors += 1;
