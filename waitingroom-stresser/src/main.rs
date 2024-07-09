@@ -76,7 +76,7 @@ async fn main() {
     }));
     
     let per_thread_count = 1000;
-    let parallelism_per_thread = 250;
+    let parallelism_per_thread = 100;
     let thread_count = 5;
 
     let start_time = std::time::Instant::now();
