@@ -22,7 +22,7 @@ async fn run_clients(count: usize, parallelism_per_thread: usize) {
             loop {
                 let mut errors = 0;
                 let response = loop {
-                    let response = match client.get("http://167.235.199.147:8000/").send().await {
+                    let response = match client.get("http://188.245.82.15:8000/").send().await {
                         Ok(r) => r,
                         Err(e) => {
                             errors += 1;
@@ -64,7 +64,7 @@ async fn run_clients(count: usize, parallelism_per_thread: usize) {
         .await;
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 3)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     let per_thread_count = 1000;
     let parallelism_per_thread = 250;
