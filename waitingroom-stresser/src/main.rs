@@ -65,7 +65,7 @@ async fn run_clients(count: usize, parallelism_per_thread: usize) {
         .await;
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 3)]
 async fn main() {
     let per_thread_count = 1000;
     let parallelism_per_thread = 250;
