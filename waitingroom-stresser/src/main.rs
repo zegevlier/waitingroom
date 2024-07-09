@@ -1,3 +1,5 @@
+use std::{backtrace::Backtrace, panic};
+
 use futures::stream::StreamExt;
 use reqwest::header::HeaderValue;
 
@@ -67,6 +69,12 @@ async fn run_clients(count: usize, parallelism_per_thread: usize) {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 3)]
 async fn main() {
+    panic::set_hook(Box::new(|info| {
+        let stacktrace = Backtrace::force_capture();
+        println!("Got panic. @info:{}\n@stackTrace:{}", info, stacktrace);
+        std::process::abort();
+    }));
+    
     let per_thread_count = 1000;
     let parallelism_per_thread = 250;
     let thread_count = 5;
