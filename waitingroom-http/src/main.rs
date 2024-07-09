@@ -220,7 +220,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     if std::env::args().nth(1) == Some("interface".to_string()) {
-        interface::interface("127.0.0.1:8000".parse().unwrap()).await;
+        interface::interface("0.0.0.0:8000".parse().unwrap()).await;
         return Ok(());
     }
 
