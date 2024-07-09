@@ -126,8 +126,8 @@ pub(crate) async fn waiting_room(
     let settings = GeneralWaitingRoomSettings {
         target_user_count: usize::MAX,
 
-        ticket_refresh_time: 5000,
-        ticket_expiry_time: 25 * 1000,
+        ticket_refresh_time: 10 * 1000,
+        ticket_expiry_time: 60 * 1000,
         pass_expiry_time: 2 * 1000,
 
         fault_detection_period: 1000,
@@ -207,6 +207,7 @@ async fn do_timers(waitingroom: WR) {
                 loop {
                     $name.tick().await;
                     let mut waitingroom = waitingroom_clone.lock().unwrap();
+                    #[allow(clippy::blocks_in_conditions)]
                     match $callback(&mut waitingroom) {
                         Ok(_) => {}
                         Err(err) => {
@@ -221,11 +222,27 @@ async fn do_timers(waitingroom: WR) {
 
     timer!(cleanup, 1000, DistributedWaitingRoom::cleanup);
 
-    timer!(receive_message, 1, DistributedWaitingRoom::receive_message);
+    timer!(
+        receive_message,
+        1,
+        |waitingroom: &mut DistributedWaitingRoom<
+            SystemTimeProvider,
+            TrueRandomProvider,
+            HttpNetworkProvider,
+        >|
+         -> Result<(), WaitingRoomError> {
+            while let Ok(processed_message) = waitingroom.receive_message() {
+                if !processed_message {
+                    break;
+                }
+            }
+            Ok(())
+        }
+    );
 
     timer!(
         fault_detection,
-        100000000000000000,
+        100,
         DistributedWaitingRoom::fault_detection
     );
 

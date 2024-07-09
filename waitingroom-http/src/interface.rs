@@ -1,7 +1,7 @@
 use std::{fs::OpenOptions, net::SocketAddr};
 
 use axum::{
-    body::Body, extract::Request, http::HeaderValue, response::Response, routing::get, Router,
+    body::Body, extract::{Request, State}, http::HeaderValue, response::Response, routing::get, Router,
 };
 use axum_extra::extract::{
     cookie::{Cookie, Key},
@@ -27,6 +27,7 @@ pub enum InterfaceMessageResponse {
     Error(String),
 }
 
+#[cached::proc_macro::cached(time = 5)]
 fn get_active_servers() -> Vec<NodeId> {
     // We'll have a look at the files in the `.locks` directory
     // and return the NodeIds of the servers that are currently active.
@@ -155,6 +156,7 @@ fn make_response(
 async fn make_interface_call(
     interface_req: InterfaceMessageRequest,
     node_id: Option<NodeId>,
+    client: reqwest::Client,
 ) -> Result<InterfaceMessageResponse, ()> {
     let active_nodes = get_active_servers();
     if active_nodes.is_empty() {
@@ -177,8 +179,6 @@ async fn make_interface_call(
 
     let interface_url = format!("http://localhost:{}/int", node_id);
 
-    let client = reqwest::Client::new();
-
     Ok(client
         .post(&interface_url)
         .json(&interface_req)
@@ -191,6 +191,7 @@ async fn make_interface_call(
 }
 
 async fn handle_waitingroom_request(
+    State(client): State<reqwest::Client>,
     req: Request,
 ) -> Result<(SignedCookieJar, Response), StatusCode> {
     let jar = SignedCookieJar::from_headers(req.headers(), Key::from(&[b'a'; 64]));
@@ -204,7 +205,7 @@ async fn handle_waitingroom_request(
         };
 
         let request = InterfaceMessageRequest::CheckInPass(pass);
-        let response = match make_interface_call(request, Some(pass.node_id)).await {
+        let response = match make_interface_call(request, Some(pass.node_id), client).await {
             Ok(response) => response,
             Err(_) => return Ok(make_response(jar, None, WaitingRoomStatus::NoActiveServers)),
         };
@@ -256,7 +257,7 @@ async fn handle_waitingroom_request(
         };
 
         let request = InterfaceMessageRequest::CheckInTicket(ticket);
-        let response = match make_interface_call(request, Some(ticket.node_id)).await {
+        let response = match make_interface_call(request, Some(ticket.node_id), client.clone()).await {
             Ok(response) => response,
             Err(_) => return Ok(make_response(jar, None, WaitingRoomStatus::NoActiveServers)),
         };
@@ -266,7 +267,7 @@ async fn handle_waitingroom_request(
                 if pos == 0 {
                     // We are allowed to leave the queue, so we do that.
                     let request = InterfaceMessageRequest::Leave(ticket);
-                    let response = match make_interface_call(request, Some(ticket.node_id)).await {
+                    let response = match make_interface_call(request, Some(ticket.node_id), client).await {
                         Ok(response) => response,
                         Err(_) => {
                             return Ok(make_response(jar, None, WaitingRoomStatus::NoActiveServers))
@@ -309,7 +310,7 @@ async fn handle_waitingroom_request(
     // We don't have a ticket or a pass, so we'll have the user join the queue.
     let request = InterfaceMessageRequest::Join;
 
-    let response = match make_interface_call(request, None).await {
+    let response = match make_interface_call(request, None, client).await {
         Ok(response) => response,
         Err(_) => return Ok(make_response(jar, None, WaitingRoomStatus::NoActiveServers)),
     };
@@ -346,7 +347,8 @@ pub(crate) async fn interface(listening_address: SocketAddr) {
                 axum::Json(active_servers)
             }),
         )
-        .fallback(get(handle_waitingroom_request));
+        .fallback(get(handle_waitingroom_request))
+        .with_state(reqwest::Client::new());
 
     let listener = tokio::net::TcpListener::bind(listening_address)
         .await
@@ -355,5 +357,5 @@ pub(crate) async fn interface(listening_address: SocketAddr) {
         "Demo HTTP server listening on http://{}",
         listener.local_addr().unwrap()
     );
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app.into_make_service()).await.unwrap();
 }
