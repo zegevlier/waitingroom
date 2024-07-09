@@ -22,7 +22,7 @@ async fn run_clients(count: usize, parallelism_per_thread: usize) {
             loop {
                 let mut errors = 0;
                 let response = loop {
-                    let response = match client.get("http://127.0.0.1:8000/").send().await {
+                    let response = match client.get("http://167.235.199.147:8000/").send().await {
                         Ok(r) => r,
                         Err(e) => {
                             errors += 1;
@@ -48,6 +48,11 @@ async fn run_clients(count: usize, parallelism_per_thread: usize) {
                         // We got the pass, so we're done!
                         break;
                     }
+                    "InvalidTicket" => {
+                        // It took too long before we got to the ticket, we need to re-queue this user.
+                        // This will happen if we just send another request.
+                        println!("Invalid ticket! Need to re-do queueing for this user.");
+                    }
                     _ => {
                         panic!("Unknown status: {}", wr_status);
                     }
@@ -59,11 +64,11 @@ async fn run_clients(count: usize, parallelism_per_thread: usize) {
         .await;
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 3)]
 async fn main() {
-    let per_thread_count = 200;
-    let parallelism_per_thread = 100;
-    let thread_count = 10;
+    let per_thread_count = 1000;
+    let parallelism_per_thread = 250;
+    let thread_count = 5;
 
     let start_time = std::time::Instant::now();
     let mut handles = Vec::new();
