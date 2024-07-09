@@ -130,9 +130,9 @@ pub(crate) async fn waiting_room(
         ticket_expiry_time: 60 * 1000,
         pass_expiry_time: 2 * 1000,
 
-        fault_detection_period: 1000,
-        fault_detection_timeout: 300,
-        fault_detection_interval: 100,
+        fault_detection_period: 10000,
+        fault_detection_timeout: 3000,
+        fault_detection_interval: 500,
 
         eviction_interval: 5000,
         cleanup_interval: 10000,
