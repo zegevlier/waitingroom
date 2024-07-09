@@ -30,6 +30,7 @@ async fn run_clients(count: usize, parallelism_per_thread: usize) {
                                 panic!("Too many errors: {}", e);
                             }
                             println!("Error: {}", e);
+                            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
                             continue;
                         }
                     };
