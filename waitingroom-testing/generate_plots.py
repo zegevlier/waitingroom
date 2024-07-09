@@ -41,12 +41,14 @@ print(df)
 # Now we plot the kendall tau distances.
 # Use different graphs for the different total values
 
-
+markers_o = ['^', 's', 'o']
 for total in df['total'].unique():
     fig, ax = plt.subplots()    
+    markers = markers_o.copy()
     for target in df['target'].unique():
+        marker = markers.pop(0)
         data = df[(df['target'] == target) & (df['total'] == total)]
-        ax.plot(data['killed'], data['kendall_tau'], label=f'target num of users={target}', linestyle='', marker='o', alpha=0.5)
+        ax.scatter(data['killed'], data['kendall_tau'], label=f'target num of users={target}', linestyle='', marker=marker, alpha=1, s=100, edgecolors='black', facecolors='none')
     ax.set_xlabel('Number of nodes added/removed')
     ax.set_ylabel('Average Kendall Tau Distance')
     ax.legend()
