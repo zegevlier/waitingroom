@@ -2533,6 +2533,7 @@ name = "waitingroom-stresser"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "rand",
  "reqwest 0.12.5",
  "reqwest_cookie_store",
  "tokio",
